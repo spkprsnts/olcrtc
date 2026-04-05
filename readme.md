@@ -12,6 +12,12 @@
 ## About
 olcRTC - out beyond
 
+Project that allows users to bypass blocking by parasitizing and tunneling on unblocked and whitelisted services in Russia
+
+By zarazaex & openlibrecommunity
+
+Made for [olcNG](https://github.com/zarazaex69/olcng)
+
  
 <div align="center">
 
