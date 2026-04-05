@@ -616,24 +616,48 @@ print_full_report(info)  # Participants, codecs, ICE servers, SDP
 
 ### Audio Channel Limitations
 
-**WARNING:** Audio channels are unreliable for data transmission through Yandex Telemost SFU.
+**WARNING:** Audio channels are completely unsuitable for data transmission through Yandex Telemost SFU.
 
-**Observed Issues:**
-- Severe signal degradation (>95% energy loss)
-- Opus codec applies aggressive voice optimization
-- Automatic gain control destroys non-voice signals
-- Voice activity detection (VAD) filters out data tones
-- Noise suppression corrupts encoded data
+**Critical Issue - Mandatory Opus Conversion:**
 
-**Test Results:**
-- Transmitted signal energy: 0.4973 (normalized)
-- Received signal energy: 0.0031-0.0125 (99% loss)
-- DTMF tones: Not detectable after transmission
-- ggwave encoding: Completely destroyed by codec
+Yandex Telemost's GOLOOM media server performs mandatory audio codec conversion at the SFU level. Regardless of the codec negotiated in the WebRTC SDP (PCMU, G.722, etc.), all audio streams are internally converted to Opus before being forwarded to other participants. This conversion is non-negotiable and happens transparently on the server side.
 
-**Root Cause:** WebRTC audio pipeline optimized for human voice, not arbitrary data. The Opus codec with DTX, FEC, and server-side processing makes audio channels unsuitable for data encoding schemes (FSK, DTMF, ggwave, etc.).
+**Why This Breaks Data Encoding:**
 
-**Recommendation:** Use DataChannel for reliable data transmission. Audio channels should only be used for actual voice communication.
+1. **Lossy Codec Transformation:** Opus is a lossy codec optimized for human speech. It applies aggressive psychoacoustic filtering that destroys non-voice signals.
+
+2. **Irreversible Signal Degradation:**
+   - Transmitted signal energy: 0.4973 (normalized)
+   - Received signal energy: 0.0031-0.0125 (99% loss)
+   - Frequency content outside speech range (300-3400 Hz) is heavily attenuated
+
+3. **Voice Activity Detection (VAD):** Server-side VAD silences frames detected as non-speech, eliminating data-carrying tones entirely.
+
+4. **Discontinuous Transmission (DTX):** Opus DTX mode collapses silence periods, making timing-based encoding impossible.
+
+5. **Codec Parameters:** Opus configuration includes:
+   - `usedtx=1` (Discontinuous Transmission enabled)
+   - `useinbandfec=1` (Forward Error Correction for voice)
+   - These parameters are optimized for voice, not data
+
+**Attempted Workarounds - All Failed:**
+
+- **PCMU/G.711 Encoding:** Server converts to Opus anyway; PCMU tones become unrecognizable
+- **DTMF Tones:** Completely destroyed by Opus processing
+- **FSK Modulation:** Frequency shifts filtered out by codec
+- **ggwave Encoding:** Ultrasonic and subsonic components removed
+- **Tone-Based Schemes:** All non-voice frequencies attenuated below detection threshold
+
+**Test Results (acsend.py):**
+```
+Sender: Transmitted PCMU-encoded data tones
+Receiver: Received silence (max_amp=0 across all frames)
+Conclusion: No recoverable signal after Opus conversion
+```
+
+**Recommendation:** 
+
+Use DataChannel for reliable data transmission. Audio channels must only be used for actual voice communication. The Opus codec conversion is a fundamental architectural constraint of the GOLOOM SFU and cannot be bypassed.
 
 ## Video Codec Configuration
 
