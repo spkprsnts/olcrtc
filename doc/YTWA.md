@@ -457,6 +457,27 @@ DataChannel is created on the publisher PeerConnection and becomes available on 
 - **Payload Type:** 101
 - **Format:** `111/111` (Opus redundancy)
 
+### Audio Channel Limitations
+
+**WARNING:** Audio channels are unreliable for data transmission through Yandex Telemost SFU.
+
+**Observed Issues:**
+- Severe signal degradation (>95% energy loss)
+- Opus codec applies aggressive voice optimization
+- Automatic gain control destroys non-voice signals
+- Voice activity detection (VAD) filters out data tones
+- Noise suppression corrupts encoded data
+
+**Test Results:**
+- Transmitted signal energy: 0.4973 (normalized)
+- Received signal energy: 0.0031-0.0125 (99% loss)
+- DTMF tones: Not detectable after transmission
+- ggwave encoding: Completely destroyed by codec
+
+**Root Cause:** WebRTC audio pipeline optimized for human voice, not arbitrary data. The Opus codec with DTX, FEC, and server-side processing makes audio channels unsuitable for data encoding schemes (FSK, DTMF, ggwave, etc.).
+
+**Recommendation:** Use DataChannel for reliable data transmission. Audio channels should only be used for actual voice communication.
+
 ## Video Codec Configuration
 
 ### Supported Codecs
