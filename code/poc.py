@@ -8,7 +8,6 @@ import websockets
 import requests
 from urllib.parse import quote
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
-from limits import check_datachannel_limits
 
 CONFERENCE_ID = "46984088311346"
 CONFERENCE_URL = f"https://telemost.yandex.ru/j/{CONFERENCE_ID}"
@@ -249,9 +248,6 @@ async def run_full_test():
 """)
     
     results = {
-        "dc_support": False,
-        "sctp_port": None,
-        "max_message_size": None,
         "server_connected": False,
         "client_connected": False,
         "messages_sent": 0,
@@ -262,26 +258,7 @@ async def run_full_test():
         "errors": []
     }
     
-    print("[1/5] Checking DataChannel support...")
-    try:
-        dc_limits = await check_datachannel_limits()
-        results["dc_support"] = dc_limits["supported"]
-        results["sctp_port"] = dc_limits["sctp_port"]
-        results["max_message_size"] = dc_limits["max_message_size"]
-        
-        print(f"      :P DataChannel: {'SUPPORTED' if results['dc_support'] else 'NOT SUPPORTED'}")
-        if results["dc_support"]:
-            print(f"      :P SCTP Port: {results['sctp_port']}")
-            print(f"      :P Max Size: {results['max_message_size']//1024//1024}MB")
-    except Exception as e:
-        results["errors"].append(f"Check failed: {e}")
-        print(f"      X Error: {e}")
-    
-    if not results["dc_support"]:
-        print("\n[!] DataChannel not supported, aborting test")
-        return results
-    
-    print("\n[2/5] Creating server peer...")
+    print("[1/4] Creating server peer...")
     try:
         server = await create_peer("Server", is_server=True)
         await asyncio.wait_for(server["dc_pub_open"].wait(), timeout=10.0)
@@ -292,7 +269,7 @@ async def run_full_test():
         print(f"      X Error: {e}")
         return results
     
-    print("\n[3/5] Creating client peer...")
+    print("\n[2/4] Creating client peer...")
     try:
         client = await create_peer("Client", is_server=False)
         await asyncio.wait_for(client["dc_pub_open"].wait(), timeout=10.0)
@@ -303,7 +280,7 @@ async def run_full_test():
         print(f"      X Error: {e}")
         return results
     
-    print("\n[4/5] Testing message exchange...")
+    print("\n[3/4] Testing message exchange...")
     await asyncio.sleep(2)
     
     test_messages = [
@@ -336,7 +313,7 @@ async def run_full_test():
         results["errors"].append(f"Exchange failed: {e}")
         print(f"      X Error: {e}")
     
-    print("\n[5/5] Cleaning up...")
+    print("\n[4/4] Cleaning up...")
     try:
         server["ws_task"].cancel()
         client["ws_task"].cancel()
@@ -357,13 +334,7 @@ def print_results(results):
                        TEST RESULTS                              
 """)
     
-    print("DataChannel Support:")
-    print(f"  - Supported: {':P YES' if results['dc_support'] else 'X NO'}")
-    if results['dc_support']:
-        print(f"  - SCTP Port: {results['sctp_port']}")
-        print(f"  - Max Message: {results['max_message_size']//1024//1024}MB")
-    
-    print("\nConnection Status:")
+    print("Connection Status:")
     print(f"  - Server: {':P Connected' if results['server_connected'] else 'X Failed'}")
     print(f"  - Client: {':P Connected' if results['client_connected'] else 'X Failed'}")
     
@@ -379,7 +350,7 @@ def print_results(results):
         for err in results['errors']:
             print(f"  - {err}")
     
-    if results['dc_support'] and results['messages_received'] > 0:
+    if results['messages_received'] > 0:
         print("\n :P TEST PASSED - OlcRTC PoC works!")
     else:
         print("\n  X TEST FAILED - Check errors above")
