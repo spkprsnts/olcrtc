@@ -8,6 +8,7 @@ import websockets
 import requests
 from urllib.parse import quote
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
+from limits import check_datachannel_limits
 
 CONFERENCE_ID = "46984088311346"
 CONFERENCE_URL = f"https://telemost.yandex.ru/j/{CONFERENCE_ID}"
@@ -263,42 +264,10 @@ async def run_full_test():
     
     print("[1/5] Checking DataChannel support...")
     try:
-        conn_info = get_connection_info("Check")
-        ws_url = conn_info["client_configuration"]["media_server_url"]
-        
-        async with websockets.connect(ws_url) as ws:
-            hello = {
-                "uid": generate_uuid(),
-                "hello": {
-                    "participantMeta": {"name": "Check", "role": "SPEAKER", "sendAudio": False, "sendVideo": False},
-                    "participantAttributes": {"name": "Check", "role": "SPEAKER"},
-                    "sendAudio": False, "sendVideo": False, "sendSharing": False,
-                    "participantId": conn_info["peer_id"],
-                    "roomId": conn_info["room_id"],
-                    "serviceName": "telemost",
-                    "credentials": conn_info["credentials"],
-                    "capabilitiesOffer": {"offerAnswerMode": ["SEPARATE"], "initialSubscriberOffer": ["ON_HELLO"]},
-                    "sdkInfo": {"implementation": "python", "version": "1.0.0"},
-                    "sdkInitializationId": generate_uuid(),
-                    "disablePublisher": False, "disableSubscriber": False
-                }
-            }
-            await ws.send(json.dumps(hello))
-            
-            for _ in range(10):
-                data = json.loads(await ws.recv())
-                if "serverHello" in data:
-                    await ws.send(json.dumps({"uid": data["uid"], "ack": {"status": {"code": "OK"}}}))
-                if "subscriberSdpOffer" in data:
-                    sdp = data["subscriberSdpOffer"]["sdp"]
-                    if "m=application" in sdp and "SCTP" in sdp:
-                        results["dc_support"] = True
-                        for line in sdp.split('\r\n'):
-                            if 'sctp-port:' in line:
-                                results["sctp_port"] = line.split(':')[1].strip()
-                            if 'max-message-size:' in line:
-                                results["max_message_size"] = int(line.split(':')[1].strip())
-                    break
+        dc_limits = await check_datachannel_limits()
+        results["dc_support"] = dc_limits["supported"]
+        results["sctp_port"] = dc_limits["sctp_port"]
+        results["max_message_size"] = dc_limits["max_message_size"]
         
         print(f"      :P DataChannel: {'SUPPORTED' if results['dc_support'] else 'NOT SUPPORTED'}")
         if results["dc_support"]:
