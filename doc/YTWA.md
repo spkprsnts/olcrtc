@@ -323,10 +323,30 @@ candidate:{foundation} {component} {protocol} {priority} {ip} {port} typ {type} 
 {
   "uid": "uuid",
   "updateDescription": {
-    "description": []
+    "description": [
+      {
+        "id": "peer-uuid",
+        "meta": {
+          "name": "string",
+          "role": "SPEAKER",
+          "description": "string",
+          "sendAudio": boolean,
+          "sendVideo": boolean
+        },
+        "participantAttributes": {
+          "name": "string",
+          "role": "SPEAKER",
+          "description": "string"
+        },
+        "sendSharing": boolean,
+        "tracks": []
+      }
+    ]
   }
 }
 ```
+
+**Description:** Sent by server when participants join/leave or change their media state. Contains full state of all participants in the conference.
 
 ## Connection Flow
 
