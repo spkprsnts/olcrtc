@@ -368,7 +368,8 @@ candidate:{foundation} {component} {protocol} {priority} {ip} {port} typ {type} 
 
 - **Protocol:** SCTP over DTLS
 - **Port:** 5000
-- **Max Message Size:** 1,073,741,823 bytes (1023 MB)
+- **Max Message Size (Advertised):** 1,073,741,823 bytes (1023 MB)
+- **Max Message Size (Actual):** 8,192 bytes (8 KB)
 - **Ordered:** Configurable (recommended: true)
 - **Label:** Custom (e.g., "olcrtc")
 
@@ -379,6 +380,42 @@ m=application 9 UDP/DTLS/SCTP webrtc-datachannel
 a=sctp-port:5000
 a=max-message-size:1073741823
 ```
+
+### Message Size Limitations
+
+The GOLOOM media server enforces a hard limit of 8KB per SCTP message despite advertising 1023MB in SDP. Messages exceeding 8KB are silently dropped.
+
+**Verified Limits:**
+- 8KB (8,192 bytes): ✓ Delivered
+- 10KB (10,240 bytes): ✗ Dropped
+
+**Root Cause:** SCTP fragmentation limit. Messages requiring more than ~6-7 UDP packets (MTU 1500) exceed server's reassembly buffer.
+
+### Large Data Transfer
+
+For data exceeding 8KB, implement application-level chunking:
+
+**Method:** Split data into 8KB chunks, send sequentially with bufferedAmount throttling.
+
+**Performance Metrics (Measured):**
+- 64KB: 2,198ms (239 Kbps)
+- 128KB: 2,218ms (473 Kbps)
+- 256KB: 2,204ms (952 Kbps)
+
+**Implementation:**
+```python
+chunk_size = 8192
+for i in range(0, len(data), chunk_size):
+    while datachannel.bufferedAmount > chunk_size * 2:
+        await asyncio.sleep(0.001)
+    datachannel.send(data[i:i+chunk_size])
+```
+
+**Latency Characteristics (RTT):**
+- 100 bytes: 42-54ms
+- 1KB: 63-74ms
+- 4KB: 54-118ms
+- 8KB: 84-201ms
 
 ### Usage
 
@@ -500,6 +537,17 @@ Credentials are time-limited and provided in `serverHello.rtcConfiguration.iceSe
 - DataChannel support is not guaranteed
 - Check SDP for `m=application` line before assuming availability
 - Server may disable DataChannel without notice
+
+### DataChannel Message Size Workaround
+
+The 8KB message limit can be bypassed using application-level chunking. For reliable large data transfer:
+
+1. Split payload into 8KB chunks
+2. Add sequence headers (chunk index, total chunks, transfer ID)
+3. Implement reassembly buffer on receiver
+4. Use bufferedAmount throttling to prevent congestion
+
+**Throughput:** ~950 Kbps sustained for 256KB transfers with 32 sequential 8KB messages.
 
 ## Rate Limits
 
