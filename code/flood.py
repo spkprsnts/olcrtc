@@ -118,9 +118,9 @@ async def main():
     
     tasks = []
     
-    for i in range(1, 41):
-        suffix = "67" * i
-        name = f"SEXEVEN {suffix}"
+    for i in range(1, 412):
+        suffix = "МЕМЫ" * i
+        name = f"СТОЙ ДАВАЙ ДРУЖИТЬ И ШУТИТЬ ПРОСТО Я ЖЕ ХОТЕЛ ПРОСТО А ТЫ ЗАЧЕМ ТО ГОВОРИШЬ СТОЙ ТЧО ЗАЧЕМ {suffix}"
         
         task = asyncio.create_task(connect_peer(name, i))
         tasks.append(task)
