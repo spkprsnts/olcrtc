@@ -1,0 +1,214 @@
+package client
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"time"
+
+	"github.com/zarazaex69/olcrtc/internal/crypto"
+	"github.com/zarazaex69/olcrtc/internal/mux"
+	"github.com/zarazaex69/olcrtc/internal/telemost"
+)
+
+type Client struct {
+	peer   *telemost.Peer
+	cipher *crypto.Cipher
+	mux    *mux.Multiplexer
+}
+
+func Run(roomURL, keyHex string, socksPort int) error {
+	var key []byte
+	var err error
+
+	if keyHex == "" {
+		key = make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+		log.Printf("Generated key: %x", key)
+	} else {
+		key, err = hex.DecodeString(keyHex)
+		if err != nil {
+			return err
+		}
+	}
+
+	cipher, err := crypto.NewCipher(string(key))
+	if err != nil {
+		return err
+	}
+
+	c := &Client{
+		cipher: cipher,
+	}
+
+	c.mux = mux.New(func(frame []byte) error {
+		encrypted, err := c.cipher.Encrypt(frame)
+		if err != nil {
+			return err
+		}
+		return c.peer.Send(encrypted)
+	})
+
+	peer, err := telemost.NewPeer(roomURL, "OlcRTC-Client", c.onData)
+	if err != nil {
+		return err
+	}
+	c.peer = peer
+
+	log.Println("Connecting to Telemost...")
+	if err := peer.Connect(context.Background()); err != nil {
+		return err
+	}
+	log.Println("Connected to Telemost")
+
+	return c.runSOCKS5(socksPort)
+}
+
+func (c *Client) onData(data []byte) {
+	plaintext, err := c.cipher.Decrypt(data)
+	if err != nil {
+		return
+	}
+
+	c.mux.HandleFrame(plaintext)
+}
+
+func (c *Client) runSOCKS5(port int) error {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	log.Printf("SOCKS5 proxy listening on 127.0.0.1:%d", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Accept error: %v", err)
+			continue
+		}
+
+		go c.handleSOCKS5(conn)
+	}
+}
+
+func (c *Client) handleSOCKS5(conn net.Conn) {
+	defer conn.Close()
+
+	buf := make([]byte, 256)
+
+	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
+		return
+	}
+
+	if buf[0] != 5 {
+		return
+	}
+
+	nmethods := buf[1]
+	if _, err := io.ReadFull(conn, buf[:nmethods]); err != nil {
+		return
+	}
+
+	conn.Write([]byte{5, 0})
+
+	if _, err := io.ReadFull(conn, buf[:4]); err != nil {
+		return
+	}
+
+	if buf[1] != 1 {
+		conn.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	var addr string
+	atyp := buf[3]
+
+	switch atyp {
+	case 1:
+		if _, err := io.ReadFull(conn, buf[:4]); err != nil {
+			return
+		}
+		addr = fmt.Sprintf("%d.%d.%d.%d", buf[0], buf[1], buf[2], buf[3])
+	case 3:
+		if _, err := io.ReadFull(conn, buf[:1]); err != nil {
+			return
+		}
+		length := buf[0]
+		if _, err := io.ReadFull(conn, buf[:length]); err != nil {
+			return
+		}
+		addr = string(buf[:length])
+	default:
+		conn.Write([]byte{5, 8, 0, 1, 0, 0, 0, 0, 0, 0})
+		return
+	}
+
+	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
+		return
+	}
+	port := binary.BigEndian.Uint16(buf[:2])
+
+	sid := c.mux.OpenStream()
+	log.Printf("SOCKS5 connect sid=%d %s:%d", sid, addr, port)
+
+	req := map[string]interface{}{
+		"cmd":  "connect",
+		"addr": addr,
+		"port": port,
+	}
+
+	reqData, _ := json.Marshal(req)
+	c.mux.SendData(sid, reqData)
+
+	time.Sleep(500 * time.Millisecond)
+
+	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				c.mux.CloseStream(sid)
+				return
+			}
+			c.mux.SendData(sid, buf[:n])
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				data := c.mux.ReadStream(sid)
+				if len(data) > 0 {
+					conn.Write(data)
+				}
+
+				if c.mux.StreamClosed(sid) {
+					return
+				}
+			}
+		}
+	}()
+
+	<-done
+}
