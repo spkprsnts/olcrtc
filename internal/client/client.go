@@ -66,6 +66,14 @@ func Run(roomURL, keyHex string, socksPort int) error {
 
 	peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
 		log.Println("Updating DataChannel after reconnect")
+		c.mux.Reset()
+		c.mux.UpdateSendFunc(func(frame []byte) error {
+			encrypted, err := c.cipher.Encrypt(frame)
+			if err != nil {
+				return err
+			}
+			return dc.Send(encrypted)
+		})
 	})
 
 	log.Println("Connecting to Telemost...")

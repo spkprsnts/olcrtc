@@ -151,3 +151,18 @@ func (m *Multiplexer) GetStreams() []uint16 {
 	}
 	return sids
 }
+
+func (m *Multiplexer) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.streams = make(map[uint16]*Stream)
+	m.nextID = 1
+}
+
+func (m *Multiplexer) UpdateSendFunc(onSend func([]byte) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.onSend = onSend
+}
