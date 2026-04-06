@@ -187,6 +187,14 @@ func (p *Peer) handleSignaling() {
 			p.sendAck(uid)
 		}
 
+		if _, ok := msg["updateDescription"]; ok {
+			p.sendAck(uid)
+		}
+
+		if _, ok := msg["vadActivity"]; ok {
+			p.sendAck(uid)
+		}
+
 		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok && !pubSent {
 			sdp, _ := offer["sdp"].(string)
 			pcSeq, _ := offer["pcSeq"].(float64)
@@ -385,7 +393,7 @@ func (p *Peer) reconnect(ctx context.Context) error {
 		p.pcPub.Close()
 	}
 	
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 	
 	conn, err := GetConnectionInfo(p.roomURL, p.name)
 	if err != nil {

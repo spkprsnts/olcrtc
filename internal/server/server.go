@@ -73,6 +73,12 @@ func Run(roomURL, keyHex string) error {
 
 	peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
 		log.Println("Server reconnected - resetting multiplexer state")
+		
+		for sid, conn := range s.connections {
+			conn.Close()
+			delete(s.connections, sid)
+		}
+		
 		s.mux.Reset()
 		s.mux.UpdateSendFunc(func(frame []byte) error {
 			encrypted, err := s.cipher.Encrypt(frame)
@@ -158,15 +164,11 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 		for {
 			n, err := conn.Read(buf)
 			if err != nil {
-				if err != io.EOF {
-					log.Printf("Read error sid=%d: %v", sid, err)
-				}
 				s.mux.CloseStream(sid)
 				return
 			}
 
 			if err := s.mux.SendData(sid, buf[:n]); err != nil {
-				log.Printf("Send error sid=%d: %v", sid, err)
 				return
 			}
 		}
