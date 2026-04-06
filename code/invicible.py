@@ -498,7 +498,7 @@ async def run():
     receiver_conn = get_connection_info("QR_Receiver")
 
     print("[1/4] Generating payloads...")
-    text_data = "привет как деееееееееееееееееееееееела".encode('utf-8')
+    text_data = "do you want to pet my pu... cat".encode('utf-8')
     video_data = os.urandom(2048) 
     
     print(f"-> Text payload: {len(text_data)} bytes")
