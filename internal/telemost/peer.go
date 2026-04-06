@@ -389,16 +389,36 @@ func (p *Peer) Close() error {
 }
 
 func (p *Peer) keepAlive() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	wsPingTicker := time.NewTicker(30 * time.Second)
+	defer wsPingTicker.Stop()
+	
+	appPingTicker := time.NewTicker(5 * time.Second)
+	defer appPingTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-wsPingTicker.C:
 			p.wsMu.Lock()
 			if p.ws != nil {
 				if err := p.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
-					log.Printf("Ping error: %v", err)
+					log.Printf("WS Ping error: %v", err)
+					p.wsMu.Unlock()
+					select {
+					case p.reconnectCh <- struct{}{}:
+					default:
+					}
+					return
+				}
+			}
+			p.wsMu.Unlock()
+		case <-appPingTicker.C:
+			p.wsMu.Lock()
+			if p.ws != nil {
+				if err := p.ws.WriteJSON(map[string]interface{}{
+					"uid":  uuid.New().String(),
+					"ping": map[string]interface{}{},
+				}); err != nil {
+					log.Printf("App Ping error: %v", err)
 					p.wsMu.Unlock()
 					select {
 					case p.reconnectCh <- struct{}{}:
