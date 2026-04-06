@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="asset/logo.png" width="750">
+<img src="asset/logor.png" width="200">
 
 
 ![License](https://img.shields.io/badge/license-WTFPL-0D1117?style=flat-square&logo=open-source-initiative&logoColor=green&labelColor=0D1117)
