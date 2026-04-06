@@ -26,6 +26,7 @@ type Peer struct {
 	onReconnect  func(*webrtc.DataChannel)
 	reconnectCh  chan struct{}
 	closeCh      chan struct{}
+	keepAliveCh  chan struct{}
 }
 
 func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
@@ -41,6 +42,7 @@ func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
 		onData:      onData,
 		reconnectCh: make(chan struct{}, 1),
 		closeCh:     make(chan struct{}),
+		keepAliveCh: make(chan struct{}),
 	}, nil
 }
 
@@ -199,6 +201,10 @@ func (p *Peer) handleSignaling() {
 			p.sendAck(uid)
 		}
 
+		if _, ok := msg["ping"]; ok {
+			p.sendPong(uid)
+		}
+
 		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok && !pubSent {
 			sdp, _ := offer["sdp"].(string)
 			pcSeq, _ := offer["pcSeq"].(float64)
@@ -316,6 +322,16 @@ func (p *Peer) sendAck(uid string) {
 	})
 }
 
+func (p *Peer) sendPong(uid string) {
+	p.wsMu.Lock()
+	defer p.wsMu.Unlock()
+	
+	p.ws.WriteJSON(map[string]interface{}{
+		"uid": uid,
+		"pong": map[string]interface{}{},
+	})
+}
+
 func (p *Peer) setupICEHandlers() {
 	p.pcSub.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
@@ -379,9 +395,11 @@ func (p *Peer) keepAlive() {
 	for {
 		select {
 		case <-ticker.C:
+			p.wsMu.Lock()
 			if p.ws != nil {
 				if err := p.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
 					log.Printf("Ping error: %v", err)
+					p.wsMu.Unlock()
 					select {
 					case p.reconnectCh <- struct{}{}:
 					default:
@@ -389,6 +407,9 @@ func (p *Peer) keepAlive() {
 					return
 				}
 			}
+			p.wsMu.Unlock()
+		case <-p.keepAliveCh:
+			return
 		case <-p.closeCh:
 			return
 		}
@@ -397,6 +418,11 @@ func (p *Peer) keepAlive() {
 
 func (p *Peer) reconnect(ctx context.Context) error {
 	log.Println("Reconnecting...")
+	
+	select {
+	case p.keepAliveCh <- struct{}{}:
+	default:
+	}
 	
 	if p.ws != nil {
 		p.ws.Close()
@@ -409,6 +435,8 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	}
 	
 	time.Sleep(500 * time.Millisecond)
+	
+	p.keepAliveCh = make(chan struct{})
 	
 	conn, err := GetConnectionInfo(p.roomURL, p.name)
 	if err != nil {
