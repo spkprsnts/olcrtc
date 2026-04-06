@@ -13,16 +13,17 @@ import (
 )
 
 type Peer struct {
-	roomURL    string
-	name       string
-	conn       *ConnectionInfo
-	ws         *websocket.Conn
-	pcSub      *webrtc.PeerConnection
-	pcPub      *webrtc.PeerConnection
-	dc         *webrtc.DataChannel
-	onData     func([]byte)
-	reconnectCh chan struct{}
-	closeCh    chan struct{}
+	roomURL      string
+	name         string
+	conn         *ConnectionInfo
+	ws           *websocket.Conn
+	pcSub        *webrtc.PeerConnection
+	pcPub        *webrtc.PeerConnection
+	dc           *webrtc.DataChannel
+	onData       func([]byte)
+	onReconnect  func(*webrtc.DataChannel)
+	reconnectCh  chan struct{}
+	closeCh      chan struct{}
 }
 
 func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
@@ -392,7 +393,19 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	}
 	p.conn = conn
 	
-	return p.Connect(ctx)
+	if err := p.Connect(ctx); err != nil {
+		return err
+	}
+	
+	if p.onReconnect != nil {
+		p.onReconnect(p.dc)
+	}
+	
+	return nil
+}
+
+func (p *Peer) SetReconnectCallback(cb func(*webrtc.DataChannel)) {
+	p.onReconnect = cb
 }
 
 func (p *Peer) WatchConnection(ctx context.Context) {

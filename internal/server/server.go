@@ -11,6 +11,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/zarazaex69/olcrtc/internal/crypto"
 	"github.com/zarazaex69/olcrtc/internal/mux"
 	"github.com/zarazaex69/olcrtc/internal/telemost"
@@ -69,6 +70,10 @@ func Run(roomURL, keyHex string) error {
 		return err
 	}
 	s.peer = peer
+
+	peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
+		log.Println("Updating DataChannel after reconnect")
+	})
 
 	log.Println("Connecting to Telemost...")
 	ctx := context.Background()
