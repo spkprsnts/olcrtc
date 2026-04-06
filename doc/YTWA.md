@@ -8,6 +8,7 @@ Yandex Telemost implements a Selective Forwarding Unit (SFU) architecture for We
 - `dcsend.py` - HTTP requests via DataChannel with chunking (verified: 892B in 1 chunk)
 - `dcstream.py` - High-speed streaming (verified: 42.35 MB at 45.75 Mbps)
 - `vcsend.py` - Data transfer via video QR codes (verified: 892B in 3 frames)
+- `invicible.py` - Encrypted dual-channel transfer (ChaCha20-Poly1305 over DC+VC)
 - `flood.py` - Stress testing connections (verified: 40 peers max, 409 after)
 - `limits.py` - Limits and performance verification (verified: all tests pass)
 - `info.py` - Conference information gathering (verified: full WebRTC details)
@@ -569,6 +570,58 @@ class QRReceiver:
 - Resilient to packet loss
 - Dual decoder (pyzbar + OpenCV) for reliability
 
+## Security and Encryption
+
+### Encrypted Dual-Channel Transfer (`invicible.py`)
+
+**ChaCha20-Poly1305 AEAD encryption over both DataChannel and Video QR:**
+
+```python
+SHARED_KEY = os.urandom(32)
+
+def encrypt_payload(tag_str, data_bytes):
+    nonce = os.urandom(12)
+    chacha = ChaCha20Poly1305(SHARED_KEY)
+    ciphertext = chacha.encrypt(nonce, data_bytes, None)
+    blob = nonce + ciphertext
+    tag_bytes = tag_str.encode('ascii').ljust(4, b'\x00')[:4]
+    len_bytes = len(blob).to_bytes(4, 'big')
+    return tag_bytes + len_bytes + blob
+
+def decrypt_payload(envelope):
+    tag = envelope[:4].decode('ascii').strip('\x00')
+    length = int.from_bytes(envelope[4:8], 'big')
+    blob = envelope[8:8+length]
+    nonce = blob[:12]
+    ciphertext = blob[12:]
+    chacha = ChaCha20Poly1305(SHARED_KEY)
+    data = chacha.decrypt(nonce, ciphertext, None)
+    return tag, data
+```
+
+**Envelope Format:**
+```
+[4 bytes: TAG] [4 bytes: LENGTH] [12 bytes: NONCE] [N bytes: CIPHERTEXT + AUTH_TAG]
+```
+
+**Dual-Channel Architecture:**
+- Text data → DataChannel (instant delivery)
+- Binary data → Video QR codes (resilient to DC failures)
+- Both channels encrypted with same key
+- Independent decryption on receiver
+
+**Verified Results:**
+- Text payload: UTF-8 string encrypted and transmitted via DC
+- Video payload: 2KB binary encrypted and transmitted via QR
+- Both payloads successfully decrypted on receiver
+- Authentication tags verified (AEAD integrity)
+
+**Use Cases:**
+- Secure file transfer over untrusted SFU
+- Covert communication (video channel appears as QR codes)
+- Redundant transmission (DC primary, VC fallback)
+- End-to-end encryption without server cooperation
+
 ## Practical Implementations
 
 ### HTTP Proxy via DataChannel (`dcsend.py`)
@@ -919,7 +972,10 @@ python code/dcsend.py
 python code/dcstream.py
 
 # QR code transfer via video (892 bytes in 3 QR frames)
-python code/vcsend.py  
+python code/vcsend.py
+
+# Encrypted dual-channel transfer (ChaCha20-Poly1305)
+python code/invicible.py
 
 # Stress test connections (40 peers max, 409 CONFLICT after)
 python code/flood.py
@@ -943,6 +999,100 @@ CONFERENCE_URL = f"https://telemost.yandex.ru/j/{CONFERENCE_ID}"
 ```
 
 For testing, create your own conference and update `CONFERENCE_ID`.
+
+### Dependencies
+
+```
+websockets>=12.0
+requests>=2.31.0
+aiortc>=1.9.0
+numpy>=1.24.0
+ggwave>=0.4.2
+qrcode>=7.4.2
+pillow>=10.0.0
+opencv-python>=4.8.0
+pyzbar>=0.1.9
+cryptography>=41.0.0
+imageio[ffmpeg]>=2.31.0
+```
+
+Install via:
+```bash
+python -m venv venv
+source venv/bin/activate  # or venv/bin/activate.fish
+pip install -r code/requirements.txt
+```
+
+## Implementation Details
+
+### Code Structure
+
+```
+code/
+├── poc.py          - Basic proof-of-concept (echo server)
+├── dcsend.py       - HTTP proxy with chunking
+├── dcstream.py     - High-speed file streaming
+├── vcsend.py       - QR code video transfer
+├── invicible.py    - Encrypted dual-channel
+├── flood.py        - Connection stress testing
+├── limits.py       - Comprehensive limits verification
+├── info.py         - Conference information collector
+├── requirements.txt - Python dependencies
+└── init.fish       - Setup script for Fish shell
+```
+
+### Common Patterns
+
+**Connection Setup:**
+```python
+conn_info = get_connection_info(display_name)
+pc_sub = RTCPeerConnection(RTCConfiguration(iceServers=[...]))
+pc_pub = RTCPeerConnection(RTCConfiguration(iceServers=[...]))
+dc_pub = pc_pub.createDataChannel(label, ordered=True)
+```
+
+**WebSocket Handshake:**
+```python
+hello = {"uid": uuid, "hello": {...}}
+await ws.send(json.dumps(hello))
+# Wait for serverHello
+# Exchange SDP offers/answers
+# Exchange ICE candidates
+```
+
+**DataChannel Throttling:**
+```python
+while dc.bufferedAmount > THRESHOLD:
+    await asyncio.sleep(0.001)
+dc.send(data)
+```
+
+**Video Track Setup:**
+```python
+class CustomVideoTrack(MediaStreamTrack):
+    kind = "video"
+    async def recv(self):
+        frame = VideoFrame.from_ndarray(array, format="rgb24")
+        frame.pts = self._pts
+        frame.time_base = Fraction(1, FRAME_RATE)
+        return frame
+
+pc_pub.addTrack(video_track)
+```
+
+### Error Handling
+
+**Connection Failures:**
+- HTTP 409: Conference limit reached (40 participants)
+- WebSocket close: Network interruption or server restart
+- ICE failure: NAT traversal issues (use TURN)
+- DataChannel close: Peer disconnection
+
+**Data Transfer Failures:**
+- Message > 8KB: Silent drop (use chunking)
+- Buffer overflow: Throttle sends with bufferedAmount
+- Incomplete transfer: Implement ACK/retry mechanism
+- Timeout: Set reasonable timeouts (10-30s)
 
 ## Bandwidth Configuration
 
