@@ -2,12 +2,13 @@
 
 set -e
 
-CONTAINER_NAME="olcrtc-server"
+CONTAINER_NAME="olcrtc-client"
 IMAGE_NAME="docker.io/library/golang:1.24-alpine"
 REPO_URL="https://github.com/zarazaex69/olcrtc.git"
-WORK_DIR="/tmp/olcrtc-deploy"
+WORK_DIR="/tmp/olcrtc-client"
+SOCKS_PORT="8808"
 
-echo "=== OlcRTC Server Deployment Script ==="
+echo "=== OlcRTC Client Deployment Script ==="
 echo ""
 
 if ! command -v podman &> /dev/null; then
@@ -42,6 +43,18 @@ if [ -z "$ROOM_ID" ]; then
 fi
 
 echo ""
+read -p "Enter Encryption Key (hex): " KEY
+
+if [ -z "$KEY" ]; then
+    echo "[X] Encryption key cannot be empty"
+    exit 1
+fi
+
+echo ""
+read -p "SOCKS5 port [default: 8808]: " PORT_INPUT
+SOCKS_PORT=${PORT_INPUT:-8808}
+
+echo ""
 echo "[*] Stopping old instance..."
 podman stop $CONTAINER_NAME 2>/dev/null || true
 podman rm $CONTAINER_NAME 2>/dev/null || true
@@ -68,39 +81,32 @@ if [ ! -f "$WORK_DIR/olcrtc" ]; then
     exit 1
 fi
 
-echo "[*] Generating encryption key..."
-KEY=$(openssl rand -hex 32)
-echo ""
-echo "=========================================="
-echo "ENCRYPTION KEY (save this!):"
-echo "$KEY"
-echo "=========================================="
-echo ""
-
-echo "[*] Starting OlcRTC server..."
+echo "[*] Starting OlcRTC client..."
 podman run -d \
     --name $CONTAINER_NAME \
     --restart unless-stopped \
+    -p 127.0.0.1:$SOCKS_PORT:$SOCKS_PORT \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode srv -id "$ROOM_ID" -key "$KEY"
+    ./olcrtc -mode cnc -id "$ROOM_ID" -key "$KEY" -socks-port $SOCKS_PORT
 
 sleep 2
 
 echo ""
-echo "[+] Server started successfully!"
+echo "[+] Client started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
 echo "Room ID: $ROOM_ID"
-echo "Encryption key: $KEY"
+echo "SOCKS5 proxy: 127.0.0.1:$SOCKS_PORT"
 echo ""
 echo "View logs:"
 echo "  podman logs -f $CONTAINER_NAME"
 echo ""
-echo "Stop server:"
+echo "Stop client:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
-echo "Client command:"
-echo "  ./olcrtc -mode cnc -id \"$ROOM_ID\" -key \"$KEY\" -socks-port 1080"
+echo "Test proxy:"
+echo "  export all_proxy=socks5h://127.0.0.1:$SOCKS_PORT"
+echo "  curl -fsSL https://ifconfig.me"
 echo ""
