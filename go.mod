@@ -1,4 +1,4 @@
-module github.com/zarazaex69/olcrtc
+module github.com/openlibrecommunity/olcrtc
 
 go 1.25.0
 
