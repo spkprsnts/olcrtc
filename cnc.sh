@@ -4,7 +4,7 @@ set -e
 
 CONTAINER_NAME="olcrtc-client"
 IMAGE_NAME="docker.io/library/golang:1.26-alpine"
-REPO_URL="https://github.com/zarazaex69/olcrtc.git"
+REPO_URL="https://github.com/openlibrecommunity/olcrtc.git"
 WORK_DIR="/tmp/olcrtc-client"
 SOCKS_PORT="8808"
 

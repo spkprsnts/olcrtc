@@ -4,7 +4,7 @@ set -e
 
 CONTAINER_NAME="olcrtc-server"
 IMAGE_NAME="docker.io/library/golang:1.26-alpine"
-REPO_URL="https://github.com/zarazaex69/olcrtc.git"
+REPO_URL="https://github.com/openlibrecommunity/olcrtc.git"
 WORK_DIR="/tmp/olcrtc-deploy"
 
 echo "=== OlcRTC Server Deployment Script ==="
