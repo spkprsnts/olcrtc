@@ -1,4 +1,5 @@
-# python -Su python3
+#!/usr/bin/fish
+
 
 python -m venv venv
 
