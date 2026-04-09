@@ -232,16 +232,22 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	}
 	s.connMu.Unlock()
 
+	start := time.Now()
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	elapsed := time.Since(start)
+	
 	if err != nil {
-		log.Printf("Connect failed sid=%d: %v", sid, err)
+		log.Printf("Connect failed sid=%d: %v (took %v)", sid, err, elapsed)
 		go s.mux.CloseStream(sid)
 		return
 	}
-
+	
+	logger.Verbose("TCP dial took %v for sid=%d", elapsed, sid)
+	
 	s.connMu.Lock()
 	s.connections[sid] = conn
 	s.connMu.Unlock()
+	
 	log.Printf("Connected sid=%d", sid)
 
 	s.mux.SendData(sid, []byte{0x00})
