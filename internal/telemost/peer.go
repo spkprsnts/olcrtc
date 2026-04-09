@@ -34,6 +34,7 @@ type Peer struct {
 	reconnectMu     sync.Mutex
 	sendQueue       chan []byte
 	sendQueueClosed atomic.Bool
+	wg              sync.WaitGroup
 }
 
 func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
@@ -163,7 +164,11 @@ func (p *Peer) Connect(ctx context.Context) error {
 
 	p.setupICEHandlers()
 
-	go p.handleSignaling()
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		p.handleSignaling()
+	}()
 
 	select {
 	case <-dcReady:
@@ -489,6 +494,27 @@ func (p *Peer) Close() error {
 		}
 	}
 	
+	if p.ws != nil {
+		log.Println("Closing WebSocket...")
+		p.wsMu.Lock()
+		p.ws.Close()
+		p.wsMu.Unlock()
+	}
+	
+	log.Println("Waiting for goroutines...")
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+	
+	select {
+	case <-done:
+		log.Println("All goroutines finished")
+	case <-time.After(2 * time.Second):
+		log.Println("Goroutine wait timeout")
+	}
+	
 	if p.dc != nil {
 		log.Println("Closing DataChannel...")
 		p.dc.Close()
@@ -503,15 +529,6 @@ func (p *Peer) Close() error {
 		log.Println("Closing Subscriber PeerConnection...")
 		p.pcSub.Close()
 	}
-	
-	if p.ws != nil {
-		log.Println("Closing WebSocket...")
-		p.wsMu.Lock()
-		p.ws.Close()
-		p.wsMu.Unlock()
-	}
-	
-	time.Sleep(200 * time.Millisecond)
 	
 	log.Println("Peer closed")
 	return nil
