@@ -264,11 +264,7 @@ func (s *Server) run(ctx context.Context) error {
 			}(sid)
 		}
 		
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(1 * time.Millisecond):
-		}
+		time.Sleep(1 * time.Millisecond)
 	}
 }
 
