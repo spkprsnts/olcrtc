@@ -262,8 +262,19 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 
 	reqData, _ := json.Marshal(req)
 	sendTime := time.Now()
+	
+	queueLen := 0
+	buffered := uint64(0)
+	for _, peer := range c.peers {
+		if peer != nil {
+			queueLen += len(peer.GetSendQueue())
+			buffered += peer.GetBufferedAmount()
+		}
+	}
+	
 	c.mux.SendData(sid, reqData)
-	log.Printf("[CLIENT] sid=%d SEND_REQUEST elapsed=%v", sid, time.Since(sendTime))
+	log.Printf("[CLIENT] sid=%d SEND_REQUEST elapsed=%v queue_len=%d dc_buffered=%d", 
+		sid, time.Since(sendTime), queueLen, buffered)
 
 	dataReady := c.mux.WaitForData(sid)
 	timeout := time.NewTimer(10 * time.Second)

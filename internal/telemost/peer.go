@@ -37,6 +37,17 @@ type Peer struct {
 	wg              sync.WaitGroup
 }
 
+func (p *Peer) GetSendQueue() chan []byte {
+	return p.sendQueue
+}
+
+func (p *Peer) GetBufferedAmount() uint64 {
+	if p.dc != nil {
+		return p.dc.BufferedAmount()
+	}
+	return 0
+}
+
 func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
 	conn, err := GetConnectionInfo(roomURL, name)
 	if err != nil {
@@ -696,8 +707,21 @@ func (p *Peer) WatchConnection(ctx context.Context) {
 }
 
 func (p *Peer) processSendQueue() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	
 	for {
 		select {
+		case <-ticker.C:
+			queueLen := len(p.sendQueue)
+			buffered := uint64(0)
+			if p.dc != nil {
+				buffered = p.dc.BufferedAmount()
+			}
+			if queueLen > 50 || buffered > 100*1024 {
+				log.Printf("[QUEUE_MONITOR] queue_len=%d dc_buffered=%d", queueLen, buffered)
+			}
+			
 		case data := <-p.sendQueue:
 			queueStart := time.Now()
 			buffered := uint64(0)
