@@ -233,7 +233,13 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	s.connMu.Unlock()
 
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	
+	conn, err := dialer.Dial("tcp4", addr)
 	elapsed := time.Since(start)
 	
 	if err != nil {
