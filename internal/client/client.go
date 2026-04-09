@@ -245,6 +245,8 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 		return
 	}
 
+	c.mux.ReadStream(sid)
+
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
 
 	done := make(chan struct{})
