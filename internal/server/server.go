@@ -90,7 +90,7 @@ func Run(roomURL, keyHex string) error {
 			if err != nil {
 				return err
 			}
-			return dc.Send(encrypted)
+			return s.peer.Send(encrypted)
 		})
 		
 		s.mux.Reset()

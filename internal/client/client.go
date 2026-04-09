@@ -73,7 +73,7 @@ func Run(roomURL, keyHex string, socksPort int) error {
 			if err != nil {
 				return err
 			}
-			return dc.Send(encrypted)
+			return c.peer.Send(encrypted)
 		})
 		
 		c.mux.Reset()
