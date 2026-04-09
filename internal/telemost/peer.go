@@ -184,10 +184,16 @@ func (p *Peer) Send(data []byte) error {
 		return fmt.Errorf("send queue closed")
 	}
 	
+	queueLen := len(p.sendQueue)
+	if queueLen > 100 {
+		logger.Verbose("Send queue length: %d", queueLen)
+	}
+	
 	select {
 	case p.sendQueue <- data:
 		return nil
 	default:
+		logger.Debug("Send queue full! Dropping packet of %d bytes", len(data))
 		return fmt.Errorf("send queue full")
 	}
 }
@@ -637,6 +643,15 @@ func (p *Peer) processSendQueue() {
 	for {
 		select {
 		case data := <-p.sendQueue:
+			buffered := uint64(0)
+			if p.dc != nil {
+				buffered = p.dc.BufferedAmount()
+			}
+			
+			if buffered > 256*1024 {
+				logger.Verbose("DataChannel buffer full: %d bytes, waiting...", buffered)
+			}
+			
 			for p.dc != nil && p.dc.BufferedAmount() > 256*1024 {
 				time.Sleep(1 * time.Millisecond)
 			}
@@ -644,6 +659,8 @@ func (p *Peer) processSendQueue() {
 			if p.dc != nil && p.dc.ReadyState() == webrtc.DataChannelStateOpen {
 				if err := p.dc.Send(data); err != nil {
 					logger.Debug("DataChannel send error: %v", err)
+				} else {
+					logger.Verbose("Sent %d bytes to DataChannel (buffered: %d)", len(data), p.dc.BufferedAmount())
 				}
 			}
 		case <-p.closeCh:
