@@ -146,6 +146,8 @@ func (p *Peer) Connect(ctx context.Context) error {
 		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
+	
+	ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 	go p.keepAlive()
 
@@ -232,6 +234,12 @@ func (p *Peer) handleSignaling() {
 			}
 			return
 		}
+		
+		p.wsMu.Lock()
+		if p.ws != nil {
+			p.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		}
+		p.wsMu.Unlock()
 
 		uid, _ := msg["uid"].(string)
 
@@ -249,6 +257,12 @@ func (p *Peer) handleSignaling() {
 
 		if _, ok := msg["ping"]; ok {
 			p.sendPong(uid)
+			continue
+		}
+		
+		if _, ok := msg["pong"]; ok {
+			p.sendAck(uid)
+			continue
 		}
 
 		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok && !pubSent {
