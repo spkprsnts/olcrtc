@@ -141,10 +141,12 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 			recvBuf:  make([]byte, 0),
 		}
 		m.streams[sid] = stream
+	} else if stream.ClientID != clientID {
+		stream.ClientID = clientID
+		stream.recvBuf = make([]byte, 0)
+		stream.closed = false
 	}
-	if stream.ClientID == clientID {
-		stream.recvBuf = append(stream.recvBuf, data...)
-	}
+	stream.recvBuf = append(stream.recvBuf, data...)
 	m.mu.Unlock()
 }
 
