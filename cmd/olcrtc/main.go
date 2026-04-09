@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
@@ -86,8 +87,19 @@ func main() {
 	case <-sigCh:
 		log.Println("Shutting down gracefully...")
 		cancel()
-		<-errCh
-		log.Println("Shutdown complete")
+		
+		done := make(chan struct{})
+		go func() {
+			<-errCh
+			close(done)
+		}()
+		
+		select {
+		case <-done:
+			log.Println("Shutdown complete")
+		case <-time.After(5 * time.Second):
+			log.Println("Shutdown timeout, forcing exit")
+		}
 	case err := <-errCh:
 		if err != nil {
 			log.Fatal(err)

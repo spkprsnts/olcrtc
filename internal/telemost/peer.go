@@ -475,26 +475,45 @@ func (p *Peer) sendLeave() {
 }
 
 func (p *Peer) Close() error {
+	log.Println("Closing peer connection...")
+	
+	p.sendQueueClosed.Store(true)
+	
 	p.sendLeave()
 	
-	close(p.closeCh)
+	if p.closeCh != nil {
+		select {
+		case <-p.closeCh:
+		default:
+			close(p.closeCh)
+		}
+	}
 	
 	if p.dc != nil {
+		log.Println("Closing DataChannel...")
 		p.dc.Close()
 	}
 	
 	if p.pcPub != nil {
+		log.Println("Closing Publisher PeerConnection...")
 		p.pcPub.Close()
 	}
 	
 	if p.pcSub != nil {
+		log.Println("Closing Subscriber PeerConnection...")
 		p.pcSub.Close()
 	}
 	
 	if p.ws != nil {
+		log.Println("Closing WebSocket...")
+		p.wsMu.Lock()
 		p.ws.Close()
+		p.wsMu.Unlock()
 	}
 	
+	time.Sleep(200 * time.Millisecond)
+	
+	log.Println("Peer closed")
 	return nil
 }
 

@@ -148,12 +148,12 @@ func (c *Client) runSOCKS5(ctx context.Context, port int) error {
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
 
 	log.Printf("SOCKS5 proxy listening on 0.0.0.0:%d", port)
 
 	go func() {
 		<-ctx.Done()
+		log.Println("Closing SOCKS5 listener...")
 		listener.Close()
 	}()
 
@@ -162,6 +162,12 @@ func (c *Client) runSOCKS5(ctx context.Context, port int) error {
 		if err != nil {
 			select {
 			case <-ctx.Done():
+				log.Println("SOCKS5 listener closed")
+				
+				for _, peer := range c.peers {
+					peer.Close()
+				}
+				
 				return nil
 			default:
 				log.Printf("Accept error: %v", err)
