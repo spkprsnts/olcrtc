@@ -247,6 +247,7 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
 
 	done := make(chan struct{})
+	streamClosed := make(chan struct{})
 
 	go func() {
 		defer close(done)
@@ -257,11 +258,14 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 				c.mux.CloseStream(sid)
 				return
 			}
-			c.mux.SendData(sid, buf[:n])
+			if err := c.mux.SendData(sid, buf[:n]); err != nil {
+				return
+			}
 		}
 	}()
 
 	go func() {
+		defer close(streamClosed)
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -272,7 +276,9 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 			case <-ticker.C:
 				data := c.mux.ReadStream(sid)
 				if len(data) > 0 {
-					conn.Write(data)
+					if _, err := conn.Write(data); err != nil {
+						return
+					}
 				}
 
 				if c.mux.StreamClosed(sid) {
@@ -282,5 +288,9 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 		}
 	}()
 
-	<-done
+	select {
+	case <-done:
+	case <-streamClosed:
+	}
+}
 }

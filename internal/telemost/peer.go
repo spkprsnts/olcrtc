@@ -424,15 +424,17 @@ func (p *Peer) sendLeave() {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
 	
-	if p.ws != nil {
-		leave := map[string]interface{}{
-			"uid":   uuid.New().String(),
-			"leave": map[string]interface{}{},
-		}
-		if err := p.ws.WriteJSON(leave); err == nil {
-			log.Println("Sent leave message to server")
-			time.Sleep(200 * time.Millisecond)
-		}
+	if p.ws == nil {
+		return
+	}
+	
+	leave := map[string]interface{}{
+		"uid":   uuid.New().String(),
+		"leave": map[string]interface{}{},
+	}
+	if err := p.ws.WriteJSON(leave); err == nil {
+		log.Println("Sent leave message to server")
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 

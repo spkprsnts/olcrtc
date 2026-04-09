@@ -18,21 +18,23 @@ type Stream struct {
 }
 
 type Multiplexer struct {
-	streams    map[uint16]*Stream
-	nextID     uint16
-	clientID   uint32
-	onSend     func([]byte) error
-	mu         sync.RWMutex
-	maxStreams int
+	streams       map[uint16]*Stream
+	nextID        uint16
+	clientID      uint32
+	onSend        func([]byte) error
+	mu            sync.RWMutex
+	maxStreams    int
+	maxBufferSize int
 }
 
 func New(clientID uint32, onSend func([]byte) error) *Multiplexer {
 	return &Multiplexer{
-		streams:    make(map[uint16]*Stream),
-		nextID:     1,
-		clientID:   clientID,
-		onSend:     onSend,
-		maxStreams: 10000,
+		streams:       make(map[uint16]*Stream),
+		nextID:        1,
+		clientID:      clientID,
+		onSend:        onSend,
+		maxStreams:    10000,
+		maxBufferSize: 1024 * 1024,
 	}
 }
 
@@ -40,15 +42,21 @@ func (m *Multiplexer) OpenStream() uint16 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	sid := m.nextID
-	m.nextID++
-
-	m.streams[sid] = &Stream{
-		ID:     sid,
-		recvBuf: make([]byte, 0),
+	for {
+		sid := m.nextID
+		m.nextID++
+		if m.nextID == 0 {
+			m.nextID = 1
+		}
+		
+		if _, exists := m.streams[sid]; !exists {
+			m.streams[sid] = &Stream{
+				ID:      sid,
+				recvBuf: make([]byte, 0),
+			}
+			return sid
+		}
 	}
-
-	return sid
 }
 
 func (m *Multiplexer) SendData(sid uint16, data []byte) error {
@@ -135,10 +143,11 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	data := frame[8 : 8+length]
 
 	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	stream, exists := m.streams[sid]
 	if !exists {
 		if len(m.streams) >= m.maxStreams {
-			m.mu.Unlock()
 			return
 		}
 		stream = &Stream{
@@ -152,8 +161,13 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 		stream.recvBuf = make([]byte, 0)
 		stream.closed = false
 	}
+	
+	if len(stream.recvBuf)+len(data) > m.maxBufferSize {
+		stream.closed = true
+		return
+	}
+	
 	stream.recvBuf = append(stream.recvBuf, data...)
-	m.mu.Unlock()
 }
 
 func (m *Multiplexer) ReadStream(sid uint16) []byte {

@@ -185,16 +185,13 @@ func (s *Server) run() error {
 			}
 
 			if s.mux.StreamClosed(sid) {
-				s.connMu.RLock()
+				s.connMu.Lock()
 				conn, exists := s.connections[sid]
-				s.connMu.RUnlock()
-				
 				if exists && conn != nil {
 					conn.Close()
-					s.connMu.Lock()
 					delete(s.connections, sid)
-					s.connMu.Unlock()
 				}
+				s.connMu.Unlock()
 			}
 		}
 	}
@@ -218,7 +215,7 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		log.Printf("Connect failed sid=%d: %v", sid, err)
-		s.mux.CloseStream(sid)
+		go s.mux.CloseStream(sid)
 		return
 	}
 
