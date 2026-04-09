@@ -263,8 +263,6 @@ func (s *Server) run(ctx context.Context) error {
 				}
 			}(sid)
 		}
-		
-		time.Sleep(100 * time.Microsecond)
 	}
 }
 

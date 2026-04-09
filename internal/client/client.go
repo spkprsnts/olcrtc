@@ -262,30 +262,14 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 	reqData, _ := json.Marshal(req)
 	c.mux.SendData(sid, reqData)
 
-	connected := make(chan bool, 1)
+	dataReady := c.mux.WaitForData(sid)
 	timeout := time.NewTimer(10 * time.Second)
 	defer timeout.Stop()
 
-	go func() {
-		for i := 0; i < 200; i++ {
-			time.Sleep(50 * time.Millisecond)
-			
-			stream := c.mux.GetStream(sid)
-			if stream != nil && len(stream.RecvBuf()) > 0 {
-				connected <- true
-				return
-			}
-			if c.mux.StreamClosed(sid) {
-				connected <- false
-				return
-			}
-		}
-		connected <- false
-	}()
-
 	select {
-	case success := <-connected:
-		if !success {
+	case <-dataReady:
+		stream := c.mux.GetStream(sid)
+		if stream == nil || len(stream.RecvBuf()) == 0 {
 			conn.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0})
 			return
 		}
@@ -337,17 +321,6 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 					}
 				}
 
-				if c.mux.StreamClosed(sid) {
-					return
-				}
-			case <-time.After(1 * time.Millisecond):
-				data := c.mux.ReadStream(sid)
-				if len(data) > 0 {
-					if _, err := conn.Write(data); err != nil {
-						return
-					}
-				}
-				
 				if c.mux.StreamClosed(sid) {
 					return
 				}
