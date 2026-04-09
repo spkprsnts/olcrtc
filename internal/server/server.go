@@ -200,6 +200,9 @@ func (s *Server) onData(data []byte) {
 }
 
 func (s *Server) run(ctx context.Context) error {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	
 	for {
 		select {
 		case <-ctx.Done():
@@ -220,7 +223,8 @@ func (s *Server) run(ctx context.Context) error {
 			log.Println("All peers closed")
 			
 			return nil
-		default:
+			
+		case <-ticker.C:
 		}
 		
 		sids := s.mux.GetStreams()
