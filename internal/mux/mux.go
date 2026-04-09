@@ -67,8 +67,10 @@ func (m *Multiplexer) OpenStream() uint16 {
 		
 		if _, exists := m.streams[sid]; !exists {
 			m.streams[sid] = &Stream{
-				ID:      sid,
-				recvBuf: make([]byte, 0),
+				ID:         sid,
+				recvBuf:    make([]byte, 0),
+				nextSeq:    0,
+				outOfOrder: make(map[uint32][]byte),
 			}
 			return sid
 		}
@@ -231,6 +233,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 				stream.recvBuf = append(stream.recvBuf, nextData...)
 				delete(stream.outOfOrder, stream.nextSeq)
 				stream.nextSeq++
+				logger.Verbose("Applied out-of-order packet sid=%d seq=%d", sid, stream.nextSeq-1)
 			} else {
 				break
 			}
@@ -247,7 +250,10 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	} else if seq > stream.nextSeq {
 		if len(stream.outOfOrder) < 100 {
 			stream.outOfOrder[seq] = append([]byte(nil), data...)
+			logger.Verbose("Buffered out-of-order packet sid=%d seq=%d (expected %d)", sid, seq, stream.nextSeq)
 		}
+	} else {
+		logger.Verbose("Dropped duplicate packet sid=%d seq=%d (expected %d)", sid, seq, stream.nextSeq)
 	}
 }
 
