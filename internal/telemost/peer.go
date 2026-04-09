@@ -474,6 +474,7 @@ func (p *Peer) sendLeave() {
 	defer p.wsMu.Unlock()
 	
 	if p.ws == nil {
+		log.Println("WebSocket already closed, cannot send leave")
 		return
 	}
 	
@@ -481,9 +482,12 @@ func (p *Peer) sendLeave() {
 		"uid":   uuid.New().String(),
 		"leave": map[string]interface{}{},
 	}
-	if err := p.ws.WriteJSON(leave); err == nil {
+	
+	if err := p.ws.WriteJSON(leave); err != nil {
+		log.Printf("Failed to send leave: %v", err)
+	} else {
 		log.Println("Sent leave message to server")
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -492,21 +496,16 @@ func (p *Peer) Close() error {
 	
 	p.sendQueueClosed.Store(true)
 	
+	log.Println("Sending leave message...")
 	p.sendLeave()
 	
+	log.Println("Closing channels...")
 	if p.closeCh != nil {
 		select {
 		case <-p.closeCh:
 		default:
 			close(p.closeCh)
 		}
-	}
-	
-	if p.ws != nil {
-		log.Println("Closing WebSocket...")
-		p.wsMu.Lock()
-		p.ws.Close()
-		p.wsMu.Unlock()
 	}
 	
 	log.Println("Waiting for goroutines...")
@@ -536,6 +535,13 @@ func (p *Peer) Close() error {
 	if p.pcSub != nil {
 		log.Println("Closing Subscriber PeerConnection...")
 		p.pcSub.Close()
+	}
+	
+	if p.ws != nil {
+		log.Println("Closing WebSocket...")
+		p.wsMu.Lock()
+		p.ws.Close()
+		p.wsMu.Unlock()
 	}
 	
 	log.Println("Peer closed")
