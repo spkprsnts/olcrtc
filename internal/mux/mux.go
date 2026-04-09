@@ -165,6 +165,7 @@ func (m *Multiplexer) Reset() {
 	}
 	
 	m.streams = make(map[uint16]*Stream)
+	m.nextID = 1
 }
 
 func (m *Multiplexer) UpdateSendFunc(onSend func([]byte) error) {
