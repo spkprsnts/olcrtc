@@ -119,6 +119,10 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 		return
 	}
 
+	if len(frame) < 4+int(length) {
+		return
+	}
+
 	data := frame[4 : 4+length]
 
 	m.mu.Lock()
