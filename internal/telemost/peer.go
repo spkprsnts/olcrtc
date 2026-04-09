@@ -487,7 +487,6 @@ func (p *Peer) sendLeave() {
 		log.Printf("Failed to send leave: %v", err)
 	} else {
 		log.Println("Sent leave message to server")
-		time.Sleep(500 * time.Millisecond)
 	}
 }
 
@@ -498,6 +497,8 @@ func (p *Peer) Close() error {
 	
 	log.Println("Sending leave message...")
 	p.sendLeave()
+	
+	time.Sleep(1 * time.Second)
 	
 	log.Println("Closing channels...")
 	if p.closeCh != nil {
@@ -540,6 +541,7 @@ func (p *Peer) Close() error {
 	if p.ws != nil {
 		log.Println("Closing WebSocket...")
 		p.wsMu.Lock()
+		p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
 		p.ws.Close()
 		p.wsMu.Unlock()
 	}
@@ -600,6 +602,7 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	log.Println("Reconnecting...")
 	
 	p.sendLeave()
+	time.Sleep(500 * time.Millisecond)
 	
 	close(p.keepAliveCh)
 	
@@ -616,7 +619,10 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	}
 	
 	if p.ws != nil {
+		p.wsMu.Lock()
+		p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
 		p.ws.Close()
+		p.wsMu.Unlock()
 	}
 	
 	time.Sleep(3 * time.Second)
