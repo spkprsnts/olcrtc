@@ -100,7 +100,11 @@ func (p *Peer) Connect(ctx context.Context) error {
 	})
 	
 	p.dc.OnClose(func() {
-		log.Println("DataChannel closed - triggering reconnect")
+		log.Println("DataChannel closed")
+		if p.onReconnect != nil {
+			log.Println("Calling reconnect callback for cleanup")
+			p.onReconnect(nil)
+		}
 		select {
 		case p.reconnectCh <- struct{}{}:
 		default:

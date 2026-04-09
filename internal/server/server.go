@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -85,13 +86,15 @@ func Run(roomURL, keyHex string) error {
 		}
 		s.connMu.Unlock()
 		
-		s.mux.UpdateSendFunc(func(frame []byte) error {
-			encrypted, err := s.cipher.Encrypt(frame)
-			if err != nil {
-				return err
-			}
-			return s.peer.Send(encrypted)
-		})
+		if dc != nil {
+			s.mux.UpdateSendFunc(func(frame []byte) error {
+				encrypted, err := s.cipher.Encrypt(frame)
+				if err != nil {
+					return err
+				}
+				return s.peer.Send(encrypted)
+			})
+		}
 		
 		s.mux.Reset()
 		
@@ -114,6 +117,23 @@ func (s *Server) onData(data []byte) {
 	plaintext, err := s.cipher.Decrypt(data)
 	if err != nil {
 		return
+	}
+
+	if len(plaintext) >= 4 {
+		sid := binary.BigEndian.Uint16(plaintext[0:2])
+		length := binary.BigEndian.Uint16(plaintext[2:4])
+		
+		if sid == 0xFFFF && length == 0xFFFF {
+			log.Println("Received reset signal from client - cleaning up")
+			s.connMu.Lock()
+			for sid, conn := range s.connections {
+				if conn != nil {
+					conn.Close()
+				}
+				delete(s.connections, sid)
+			}
+			s.connMu.Unlock()
+		}
 	}
 
 	s.mux.HandleFrame(plaintext)
@@ -174,6 +194,14 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	addr := fmt.Sprintf("%s:%d", req.Addr, req.Port)
 	log.Printf("Connecting sid=%d to %s", sid, addr)
 
+	s.connMu.Lock()
+	if oldConn, exists := s.connections[sid]; exists && oldConn != nil {
+		log.Printf("Closing old connection for sid=%d", sid)
+		oldConn.Close()
+		delete(s.connections, sid)
+	}
+	s.connMu.Unlock()
+
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		log.Printf("Connect failed sid=%d: %v", sid, err)
@@ -192,6 +220,9 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 			n, err := conn.Read(buf)
 			if err != nil {
 				s.mux.CloseStream(sid)
+				s.connMu.Lock()
+				delete(s.connections, sid)
+				s.connMu.Unlock()
 				return
 			}
 

@@ -88,6 +88,15 @@ func Run(roomURL, keyHex string, socksPort int) error {
 	}
 	log.Println("Connected to Telemost")
 
+	time.Sleep(100 * time.Millisecond)
+	
+	resetFrame := make([]byte, 4)
+	binary.BigEndian.PutUint16(resetFrame[0:2], 0xFFFF)
+	binary.BigEndian.PutUint16(resetFrame[2:4], 0xFFFF)
+	encrypted, _ := cipher.Encrypt(resetFrame)
+	peer.Send(encrypted)
+	log.Println("Sent reset signal to server")
+
 	go peer.WatchConnection(ctx)
 
 	return c.runSOCKS5(socksPort)

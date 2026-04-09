@@ -99,6 +99,17 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	sid := binary.BigEndian.Uint16(frame[0:2])
 	length := binary.BigEndian.Uint16(frame[2:4])
 
+	if sid == 0xFFFF && length == 0xFFFF {
+		m.mu.Lock()
+		for _, stream := range m.streams {
+			stream.closed = true
+		}
+		m.streams = make(map[uint16]*Stream)
+		m.nextID = 1
+		m.mu.Unlock()
+		return
+	}
+
 	if length == 0 {
 		m.mu.Lock()
 		if stream, exists := m.streams[sid]; exists {
