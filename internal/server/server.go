@@ -227,6 +227,8 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	s.connMu.Unlock()
 	log.Printf("Connected sid=%d", sid)
 
+	s.mux.SendData(sid, []byte{0x00})
+
 	go func() {
 		defer func() {
 			s.mux.CloseStream(sid)

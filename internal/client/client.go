@@ -221,8 +221,12 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 		for i := 0; i < 100; i++ {
 			time.Sleep(50 * time.Millisecond)
 			data := c.mux.ReadStream(sid)
-			if len(data) > 0 || c.mux.StreamClosed(sid) {
-				connected <- len(data) > 0
+			if len(data) > 0 {
+				connected <- true
+				return
+			}
+			if c.mux.StreamClosed(sid) {
+				connected <- false
 				return
 			}
 		}
