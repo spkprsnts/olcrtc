@@ -26,7 +26,7 @@ type Client struct {
 	clientID uint32
 }
 
-func Run(roomURL, keyHex string, socksPort int) error {
+func Run(ctx context.Context, roomURL, keyHex string, socksPort int) error {
 	var key []byte
 	var err error
 
@@ -94,7 +94,6 @@ func Run(roomURL, keyHex string, socksPort int) error {
 	})
 
 	log.Println("Connecting to Telemost...")
-	ctx := context.Background()
 	if err := peer.Connect(ctx); err != nil {
 		return err
 	}
@@ -112,7 +111,7 @@ func Run(roomURL, keyHex string, socksPort int) error {
 
 	go peer.WatchConnection(ctx)
 
-	return c.runSOCKS5(socksPort)
+	return c.runSOCKS5(ctx, socksPort)
 }
 
 func (c *Client) onData(data []byte) {
@@ -124,7 +123,7 @@ func (c *Client) onData(data []byte) {
 	c.mux.HandleFrame(plaintext)
 }
 
-func (c *Client) runSOCKS5(port int) error {
+func (c *Client) runSOCKS5(ctx context.Context, port int) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		return err
@@ -133,11 +132,21 @@ func (c *Client) runSOCKS5(port int) error {
 
 	log.Printf("SOCKS5 proxy listening on 0.0.0.0:%d", port)
 
+	go func() {
+		<-ctx.Done()
+		listener.Close()
+	}()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Accept error: %v", err)
-			continue
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				log.Printf("Accept error: %v", err)
+				continue
+			}
 		}
 
 		go c.handleSOCKS5(conn)

@@ -33,7 +33,7 @@ type ConnectRequest struct {
 	Port int    `json:"port"`
 }
 
-func Run(roomURL, keyHex string) error {
+func Run(ctx context.Context, roomURL, keyHex string) error {
 	var key []byte
 	var err error
 
@@ -110,7 +110,6 @@ func Run(roomURL, keyHex string) error {
 	})
 
 	log.Println("Connecting to Telemost...")
-	ctx := context.Background()
 	if err := peer.Connect(ctx); err != nil {
 		return err
 	}
@@ -118,7 +117,7 @@ func Run(roomURL, keyHex string) error {
 
 	go peer.WatchConnection(ctx)
 
-	return s.run()
+	return s.run(ctx)
 }
 
 func (s *Server) onData(data []byte) {
@@ -151,8 +150,23 @@ func (s *Server) onData(data []byte) {
 	s.mux.HandleFrame(plaintext)
 }
 
-func (s *Server) run() error {
+func (s *Server) run(ctx context.Context) error {
 	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Server shutting down...")
+			s.connMu.Lock()
+			for _, conn := range s.connections {
+				if conn != nil {
+					conn.Close()
+				}
+			}
+			s.connMu.Unlock()
+			s.peer.Close()
+			return nil
+		default:
+		}
+		
 		sids := s.mux.GetStreams()
 		
 		for _, sid := range sids {

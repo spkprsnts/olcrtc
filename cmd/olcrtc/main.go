@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
@@ -55,13 +59,31 @@ func main() {
 
 	roomURL := "https://telemost.yandex.ru/j/" + roomID
 
-	switch mode {
-	case "srv":
-		if err := server.Run(roomURL, keyHex); err != nil {
-			log.Fatal(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		switch mode {
+		case "srv":
+			errCh <- server.Run(ctx, roomURL, keyHex)
+		case "cnc":
+			errCh <- client.Run(ctx, roomURL, keyHex, socksPort)
 		}
-	case "cnc":
-		if err := client.Run(roomURL, keyHex, socksPort); err != nil {
+	}()
+
+	select {
+	case <-sigCh:
+		log.Println("Shutting down gracefully...")
+		cancel()
+		<-errCh
+		log.Println("Shutdown complete")
+	case err := <-errCh:
+		if err != nil {
 			log.Fatal(err)
 		}
 	}
