@@ -57,6 +57,14 @@ func main() {
 		log.Fatal("Specify -mode srv or -mode cnc")
 	}
 
+	if !filepath.IsAbs(dataDir) {
+		exePath, err := os.Executable()
+		if err == nil {
+			exeDir := filepath.Dir(exePath)
+			dataDir = filepath.Join(exeDir, dataDir)
+		}
+	}
+
 	namesPath := filepath.Join(dataDir, "names")
 	surnamesPath := filepath.Join(dataDir, "surnames")
 
