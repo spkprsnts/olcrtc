@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,7 @@ type Client struct {
 	mux      *mux.Multiplexer
 	clientID uint32
 	peerIdx  atomic.Uint32
+	wg       sync.WaitGroup
 }
 
 func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) error {
@@ -113,7 +115,11 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) e
 		}
 		log.Printf("Peer %d connected", i)
 
-		go peer.WatchConnection(ctx)
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			peer.WatchConnection(ctx)
+		}()
 	}
 
 	time.Sleep(100 * time.Millisecond)
@@ -129,7 +135,13 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) e
 	}
 	log.Printf("Sent reset signal to server (clientID=%d)", c.clientID)
 
-	return c.runSOCKS5(ctx, socksPort)
+	err := c.runSOCKS5(ctx, socksPort)
+	
+	log.Println("Waiting for client goroutines...")
+	c.wg.Wait()
+	log.Println("Client goroutines finished")
+	
+	return err
 }
 
 func (c *Client) onData(data []byte) {

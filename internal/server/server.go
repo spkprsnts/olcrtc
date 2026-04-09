@@ -28,6 +28,7 @@ type Server struct {
 	connections map[uint16]net.Conn
 	connMu      sync.RWMutex
 	peerIdx     atomic.Uint32
+	wg          sync.WaitGroup
 }
 
 type ConnectRequest struct {
@@ -128,10 +129,20 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool) error {
 		}
 		log.Printf("Peer %d connected", i)
 
-		go peer.WatchConnection(ctx)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			peer.WatchConnection(ctx)
+		}()
 	}
 
-	return s.run(ctx)
+	err := s.run(ctx)
+	
+	log.Println("Waiting for server goroutines...")
+	s.wg.Wait()
+	log.Println("Server goroutines finished")
+	
+	return err
 }
 
 func (s *Server) onData(data []byte) {
