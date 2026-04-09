@@ -30,6 +30,8 @@ type Server struct {
 	peerIdx     atomic.Uint32
 	wg          sync.WaitGroup
 	dnsServer   string
+	dnsCache    sync.Map
+	resolver    *net.Resolver
 }
 
 type ConnectRequest struct {
@@ -73,6 +75,18 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer string
 		connections: make(map[uint16]net.Conn),
 		peers:       make([]*telemost.Peer, 0),
 		dnsServer:   dnsServer,
+	}
+	
+	if dnsServer == "" {
+		dnsServer = "1.1.1.1:53"
+	}
+	
+	s.resolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 3 * time.Second}
+			return d.DialContext(ctx, network, dnsServer)
+		},
 	}
 
 	peerCount := 1
@@ -305,18 +319,10 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 
 	dialStart := time.Now()
 	
-	resolver := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			d := net.Dialer{Timeout: 2 * time.Second}
-			return d.DialContext(ctx, network, s.dnsServer)
-		},
-	}
-	
 	dialer := &net.Dialer{
-		Timeout:   5 * time.Second,
+		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
-		Resolver:  resolver,
+		Resolver:  s.resolver,
 	}
 	
 	conn, err := dialer.Dial("tcp4", addr)
