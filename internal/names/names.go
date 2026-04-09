@@ -12,6 +12,18 @@ var (
 	lastNames  []string
 )
 
+var defaultFirstNames = []string{
+	"Александр", "Дмитрий", "Максим", "Сергей", "Андрей", "Алексей", "Артём", "Илья", "Кирилл", "Михаил",
+	"Никита", "Матвей", "Роман", "Егор", "Арсений", "Иван", "Денис", "Евгений", "Даниил", "Тимофей",
+	"Владислав", "Игорь", "Владимир", "Павел", "Руслан", "Марк", "Константин", "Николай", "Олег", "Виктор",
+}
+
+var defaultLastNames = []string{
+	"Иванов", "Смирнов", "Кузнецов", "Попов", "Васильев", "Петров", "Соколов", "Михайлов", "Новиков", "Фёдоров",
+	"Морозов", "Волков", "Алексеев", "Лебедев", "Семёнов", "Егоров", "Павлов", "Козлов", "Степанов", "Николаев",
+	"Орлов", "Андреев", "Макаров", "Никитин", "Захаров", "Зайцев", "Соловьёв", "Борисов", "Яковлев", "Григорьев",
+}
+
 func loadNames(path string) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -32,25 +44,21 @@ func loadNames(path string) ([]string, error) {
 }
 
 func LoadNameFiles(firstPath, lastPath string) error {
-	var err error
-	firstNames, err = loadNames(firstPath)
-	if err != nil {
-		return err
+	firstNames = defaultFirstNames
+	lastNames = defaultLastNames
+
+	if names, err := loadNames(firstPath); err == nil {
+		firstNames = names
 	}
 
-	lastNames, err = loadNames(lastPath)
-	if err != nil {
-		return err
+	if names, err := loadNames(lastPath); err == nil {
+		lastNames = names
 	}
 
 	return nil
 }
 
 func Generate() string {
-	if len(firstNames) == 0 || len(lastNames) == 0 {
-		return "Unknown User"
-	}
-
 	first := firstNames[rand.IntN(len(firstNames))]
 	last := lastNames[rand.IntN(len(lastNames))]
 
