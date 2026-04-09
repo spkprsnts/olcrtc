@@ -293,4 +293,3 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 	case <-streamClosed:
 	}
 }
-}
