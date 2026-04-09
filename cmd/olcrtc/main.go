@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"log"
+	"path/filepath"
 
 	"github.com/openlibrecommunity/olcrtc/internal/client"
+	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 )
 
@@ -16,6 +18,7 @@ func main() {
 		socksPort int
 		keyHex    string
 		debug     bool
+		dataDir   string
 	)
 
 	flag.StringVar(&mode, "mode", "", "Mode: srv or cnc")
@@ -24,6 +27,7 @@ func main() {
 	flag.IntVar(&socksPort, "socks-port", 1080, "SOCKS5 port (client only)")
 	flag.StringVar(&keyHex, "key", "", "Shared encryption key (hex)")
 	flag.BoolVar(&debug, "debug", false, "Enable debug logging")
+	flag.StringVar(&dataDir, "data", "data", "Path to data directory")
 	flag.Parse()
 
 	if !debug {
@@ -36,6 +40,13 @@ func main() {
 
 	if roomID == "" {
 		log.Fatal("Room ID required")
+	}
+
+	namesPath := filepath.Join(dataDir, "names")
+	surnamesPath := filepath.Join(dataDir, "surnames")
+
+	if err := names.LoadNameFiles(namesPath, surnamesPath); err != nil {
+		log.Fatalf("Failed to load name files: %v", err)
 	}
 
 	roomURL := "https://telemost.yandex.ru/j/" + roomID

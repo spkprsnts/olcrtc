@@ -14,6 +14,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
+	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/telemost"
 )
 
@@ -66,7 +67,7 @@ func Run(roomURL, keyHex string) error {
 		return s.peer.Send(encrypted)
 	})
 
-	peer, err := telemost.NewPeer(roomURL, "OlcRTC-Server", s.onData)
+	peer, err := telemost.NewPeer(roomURL, names.Generate(), s.onData)
 	if err != nil {
 		return err
 	}
