@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -21,6 +22,7 @@ type Server struct {
 	cipher      *crypto.Cipher
 	mux         *mux.Multiplexer
 	connections map[uint16]net.Conn
+	connMu      sync.RWMutex
 }
 
 type ConnectRequest struct {
@@ -73,10 +75,12 @@ func Run(roomURL, keyHex string) error {
 	peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
 		log.Println("Server reconnected - resetting multiplexer state")
 		
+		s.connMu.Lock()
 		for sid, conn := range s.connections {
 			conn.Close()
 			delete(s.connections, sid)
 		}
+		s.connMu.Unlock()
 		
 		s.mux.Reset()
 		s.mux.UpdateSendFunc(func(frame []byte) error {
@@ -118,11 +122,17 @@ func (s *Server) run() error {
 		for _, sid := range s.mux.GetStreams() {
 			data := s.mux.ReadStream(sid)
 			if len(data) > 0 {
-				if conn, exists := s.connections[sid]; exists {
+				s.connMu.RLock()
+				conn, exists := s.connections[sid]
+				s.connMu.RUnlock()
+				
+				if exists {
 					if _, err := conn.Write(data); err != nil {
 						s.mux.CloseStream(sid)
 						conn.Close()
+						s.connMu.Lock()
 						delete(s.connections, sid)
+						s.connMu.Unlock()
 					}
 				} else {
 					var req ConnectRequest
@@ -133,9 +143,15 @@ func (s *Server) run() error {
 			}
 
 			if s.mux.StreamClosed(sid) {
-				if conn, exists := s.connections[sid]; exists {
+				s.connMu.RLock()
+				conn, exists := s.connections[sid]
+				s.connMu.RUnlock()
+				
+				if exists {
 					conn.Close()
+					s.connMu.Lock()
 					delete(s.connections, sid)
+					s.connMu.Unlock()
 				}
 			}
 		}
@@ -155,7 +171,9 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 		return
 	}
 
+	s.connMu.Lock()
 	s.connections[sid] = conn
+	s.connMu.Unlock()
 	log.Printf("Connected sid=%d", sid)
 
 	go func() {
