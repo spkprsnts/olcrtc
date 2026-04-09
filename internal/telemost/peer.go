@@ -726,15 +726,15 @@ func (p *Peer) processSendQueue(workerID int) {
 			
 			start := time.Now()
 			
-			for p.dc.BufferedAmount() > 128*1024 {
-				time.Sleep(5 * time.Millisecond)
-				if time.Since(start) > 5*time.Second {
+			for p.dc.BufferedAmount() > 64*1024 {
+				time.Sleep(10 * time.Millisecond)
+				if time.Since(start) > 3*time.Second {
 					log.Printf("[WORKER-%d] Buffer wait timeout, dropping packet size=%d", workerID, len(data))
 					break
 				}
 			}
 			
-			if time.Since(start) > 5*time.Second {
+			if time.Since(start) > 3*time.Second {
 				continue
 			}
 			
@@ -743,7 +743,7 @@ func (p *Peer) processSendQueue(workerID int) {
 				log.Printf("[WORKER-%d] Send error: %v", workerID, err)
 			} else {
 				elapsed := time.Since(sendStart)
-				if elapsed > 100*time.Millisecond {
+				if elapsed > 50*time.Millisecond {
 					log.Printf("[WORKER-%d] Sent %d bytes in %v (buffered: %d)", 
 						workerID, len(data), elapsed, p.dc.BufferedAmount())
 				} else {
@@ -770,11 +770,15 @@ func (p *Peer) monitorQueue() {
 			if p.dc != nil {
 				buffered = p.dc.BufferedAmount()
 			}
-			if queueLen > 100 || buffered > 50*1024 {
+			if queueLen > 500 || buffered > 50*1024 {
 				log.Printf("[QUEUE_MONITOR] queue_len=%d dc_buffered=%d", queueLen, buffered)
 			}
 		case <-p.closeCh:
 			return
 		}
 	}
+}
+
+func (p *Peer) CanSend() bool {
+	return len(p.sendQueue) < 3000
 }

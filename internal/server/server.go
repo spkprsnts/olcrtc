@@ -82,6 +82,20 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer string
 	}
 
 	s.mux = mux.New(0, func(frame []byte) error {
+		for {
+			canSend := true
+			for _, peer := range s.peers {
+				if !peer.CanSend() {
+					canSend = false
+					break
+				}
+			}
+			if canSend {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		
 		encrypted, err := s.cipher.Encrypt(frame)
 		if err != nil {
 			return err
@@ -334,11 +348,15 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 			s.connMu.Unlock()
 		}()
 		
-		buf := make([]byte, 32768)
+		buf := make([]byte, 16384)
 		for {
 			n, err := conn.Read(buf)
 			if err != nil {
 				return
+			}
+			
+			for !s.canSendData() {
+				time.Sleep(20 * time.Millisecond)
 			}
 
 			if err := s.mux.SendData(sid, buf[:n]); err != nil {
@@ -346,4 +364,13 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 			}
 		}
 	}()
+}
+
+func (s *Server) canSendData() bool {
+	for _, peer := range s.peers {
+		if !peer.CanSend() {
+			return false
+		}
+	}
+	return true
 }

@@ -76,6 +76,20 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) e
 	}
 
 	c.mux = mux.New(c.clientID, func(frame []byte) error {
+		for {
+			canSend := true
+			for _, peer := range c.peers {
+				if !peer.CanSend() {
+					canSend = false
+					break
+				}
+			}
+			if canSend {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		
 		encrypted, err := c.cipher.Encrypt(frame)
 		if err != nil {
 			return err

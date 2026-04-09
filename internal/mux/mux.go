@@ -89,7 +89,7 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 
 	logger.Verbose("SendData: sid=%d, size=%d bytes", sid, len(data))
 
-	const chunkSize = 7168
+	const chunkSize = 4096
 	for i := 0; i < len(data); i += chunkSize {
 		end := i + chunkSize
 		if end > len(data) {
