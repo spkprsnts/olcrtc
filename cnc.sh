@@ -74,7 +74,7 @@ podman run --rm \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    sh -c "apk add --no-cache git && go mod tidy && go build -o olcrtc cmd/olcrtc/main.go"
+    sh -c "go mod tidy && go build -o olcrtc cmd/olcrtc/main.go"
 
 if [ ! -f "$WORK_DIR/olcrtc" ]; then
     echo "[X] Build failed"
