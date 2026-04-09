@@ -13,9 +13,10 @@ olcRTC - across the Sea
 
 Project that allows users to bypass blocking by parasitizing and tunneling on unblocked and whitelisted services in Russia, use telemost, Max, mail and API in the future
 
-## Satus
+## satus
 
 pre-alpha
+see all info in [issues](https://github.com/openlibrecommunity/olcrtc/issues)
 
 ## fast start
 
