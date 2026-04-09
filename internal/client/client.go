@@ -218,10 +218,11 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 	defer timeout.Stop()
 
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 200; i++ {
 			time.Sleep(50 * time.Millisecond)
-			data := c.mux.ReadStream(sid)
-			if len(data) > 0 {
+			
+			stream := c.mux.GetStream(sid)
+			if stream != nil && len(stream.RecvBuf()) > 0 {
 				connected <- true
 				return
 			}

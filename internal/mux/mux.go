@@ -17,6 +17,12 @@ type Stream struct {
 	mu       sync.Mutex
 }
 
+func (s *Stream) RecvBuf() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.recvBuf
+}
+
 type Multiplexer struct {
 	streams       map[uint16]*Stream
 	nextID        uint16
