@@ -131,7 +131,7 @@ func (s *Server) run() error {
 				conn, exists := s.connections[sid]
 				s.connMu.RUnlock()
 				
-				if exists {
+				if exists && conn != nil {
 					if _, err := conn.Write(data); err != nil {
 						s.mux.CloseStream(sid)
 						conn.Close()
@@ -142,6 +142,11 @@ func (s *Server) run() error {
 				} else {
 					var req ConnectRequest
 					if err := json.Unmarshal(data, &req); err == nil && req.Cmd == "connect" {
+						s.connMu.Lock()
+						if oldConn, exists := s.connections[sid]; exists && oldConn != nil {
+							oldConn.Close()
+						}
+						s.connMu.Unlock()
 						go s.handleConnect(sid, req)
 					}
 				}
@@ -152,7 +157,7 @@ func (s *Server) run() error {
 				conn, exists := s.connections[sid]
 				s.connMu.RUnlock()
 				
-				if exists {
+				if exists && conn != nil {
 					conn.Close()
 					s.connMu.Lock()
 					delete(s.connections, sid)
