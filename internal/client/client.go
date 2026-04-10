@@ -103,18 +103,19 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool, s
 	})
 
 	for i := 0; i < peerCount; i++ {
+		peerID := i
 		peer, err := telemost.NewPeer(roomURL, names.Generate(), c.onData)
 		if err != nil {
 			return err
 		}
 		peer.SetEndedCallback(func(reason string) {
-			log.Printf("Client peer %d reported conference end: %s", i, reason)
+			log.Printf("Client peer %d reported conference end: %s", peerID, reason)
 			cancel()
 		})
 		c.peers = append(c.peers, peer)
 
 		peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
-			log.Printf("Client peer %d reconnected - resetting multiplexer state", i)
+			log.Printf("Client peer %d reconnected - resetting multiplexer state", peerID)
 
 			c.mux.UpdateSendFunc(func(frame []byte) error {
 				encrypted, err := c.cipher.Encrypt(frame)
@@ -130,11 +131,11 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool, s
 			log.Println("Client multiplexer reset complete")
 		})
 
-		log.Printf("Connecting peer %d to Telemost...", i)
+		log.Printf("Connecting peer %d to Telemost...", peerID)
 		if err := peer.Connect(runCtx); err != nil {
 			return err
 		}
-		log.Printf("Peer %d connected", i)
+		log.Printf("Peer %d connected", peerID)
 
 		c.wg.Add(1)
 		go func() {
@@ -145,17 +146,18 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool, s
 
 	time.Sleep(100 * time.Millisecond)
 
-	resetFrame := make([]byte, 12)
-	binary.BigEndian.PutUint32(resetFrame[0:4], c.clientID)
-	binary.BigEndian.PutUint16(resetFrame[4:6], 0xFFFF)
-	binary.BigEndian.PutUint16(resetFrame[6:8], 0xFFFF)
-	binary.BigEndian.PutUint32(resetFrame[8:12], 0)
-	encrypted, _ := cipher.Encrypt(resetFrame)
-
-	for _, peer := range c.peers {
-		peer.Send(encrypted)
+	resetFrame := mux.BuildControlFrame(c.clientID, mux.ControlResetClient)
+	encrypted, err := cipher.Encrypt(resetFrame)
+	if err != nil {
+		log.Printf("Failed to encrypt reset signal: %v", err)
+	} else {
+		for _, peer := range c.peers {
+			if err := peer.Send(encrypted); err != nil {
+				log.Printf("Failed to send reset signal to server: %v", err)
+			}
+		}
+		log.Printf("Sent reset signal to server (clientID=%d)", c.clientID)
 	}
-	log.Printf("Sent reset signal to server (clientID=%d)", c.clientID)
 
 	err = c.runSOCKS5(runCtx, socksPort, socksUser, socksPass)
 

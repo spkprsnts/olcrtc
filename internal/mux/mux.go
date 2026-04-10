@@ -6,11 +6,24 @@ package mux
 
 import (
 	"encoding/binary"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 )
+
+const (
+	ControlStreamID uint16 = 0xFFFF
+	ControlLength   uint16 = 0xFFFF
+
+	ControlResetClient uint32 = 1
+)
+
+type ControlFrame struct {
+	ClientID uint32
+	Type     uint32
+}
 
 type Stream struct {
 	ID         uint16
@@ -144,24 +157,47 @@ func (m *Multiplexer) CloseStream(sid uint16) error {
 	return m.onSend(frame)
 }
 
-func (m *Multiplexer) HandleFrame(frame []byte) {
-	if len(frame) < 12 {
-		if len(frame) >= 8 {
-			clientID := binary.BigEndian.Uint32(frame[0:4])
-			sid := binary.BigEndian.Uint16(frame[4:6])
-			length := binary.BigEndian.Uint16(frame[6:8])
+func (m *Multiplexer) SendClientReset() error {
+	if m.clientID == 0 {
+		return errors.New("client reset requires a non-zero client id")
+	}
+	return m.onSend(BuildControlFrame(m.clientID, ControlResetClient))
+}
 
-			if sid == 0xFFFF && length == 0xFFFF {
-				m.mu.Lock()
-				for streamSid, stream := range m.streams {
-					if stream.ClientID == clientID {
-						stream.closed = true
-						delete(m.streams, streamSid)
-					}
-				}
-				m.mu.Unlock()
-			}
-		}
+func BuildControlFrame(clientID uint32, controlType uint32) []byte {
+	frame := make([]byte, 12)
+	binary.BigEndian.PutUint32(frame[0:4], clientID)
+	binary.BigEndian.PutUint16(frame[4:6], ControlStreamID)
+	binary.BigEndian.PutUint16(frame[6:8], ControlLength)
+	binary.BigEndian.PutUint32(frame[8:12], controlType)
+	return frame
+}
+
+func ParseControlFrame(frame []byte) (ControlFrame, bool) {
+	if len(frame) < 12 {
+		return ControlFrame{}, false
+	}
+
+	sid := binary.BigEndian.Uint16(frame[4:6])
+	length := binary.BigEndian.Uint16(frame[6:8])
+	if sid != ControlStreamID || length != ControlLength {
+		return ControlFrame{}, false
+	}
+
+	return ControlFrame{
+		ClientID: binary.BigEndian.Uint32(frame[0:4]),
+		Type:     binary.BigEndian.Uint32(frame[8:12]),
+	}, true
+}
+
+func (m *Multiplexer) HandleFrame(frame []byte) {
+	control, ok := ParseControlFrame(frame)
+	if ok {
+		m.handleControlFrame(control)
+		return
+	}
+
+	if len(frame) < 12 {
 		return
 	}
 
@@ -169,18 +205,6 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	sid := binary.BigEndian.Uint16(frame[4:6])
 	length := binary.BigEndian.Uint16(frame[6:8])
 	seq := binary.BigEndian.Uint32(frame[8:12])
-
-	if sid == 0xFFFF && length == 0xFFFF {
-		m.mu.Lock()
-		for streamSid, stream := range m.streams {
-			if stream.ClientID == clientID {
-				stream.closed = true
-				delete(m.streams, streamSid)
-			}
-		}
-		m.mu.Unlock()
-		return
-	}
 
 	if length == 0 {
 		m.mu.Lock()
@@ -266,6 +290,27 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	} else if seq > stream.nextSeq {
 		if len(stream.outOfOrder) < 100 {
 			stream.outOfOrder[seq] = append([]byte(nil), data...)
+		}
+	}
+}
+
+func (m *Multiplexer) handleControlFrame(control ControlFrame) {
+	switch control.Type {
+	case ControlResetClient:
+		m.ResetClient(control.ClientID)
+	default:
+		logger.Debug("Unknown mux control frame type=%d clientID=%d", control.Type, control.ClientID)
+	}
+}
+
+func (m *Multiplexer) ResetClient(clientID uint32) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for streamSid, stream := range m.streams {
+		if stream.ClientID == clientID {
+			stream.closed = true
+			delete(m.streams, streamSid)
 		}
 	}
 }
