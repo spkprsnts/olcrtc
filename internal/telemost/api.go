@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
+	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
 const apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
@@ -44,7 +45,8 @@ func GetConnectionInfo(roomURL, displayName string) (*ConnectionInfo, error) {
 	req.Header.Set("Origin", "https://telemost.yandex.ru")
 	req.Header.Set("Referer", "https://telemost.yandex.ru/")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := protect.NewHTTPClient()
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

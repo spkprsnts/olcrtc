@@ -87,7 +87,7 @@ func main() {
 		case "srv":
 			errCh <- server.Run(ctx, roomURL, keyHex, duo, dnsServer)
 		case "cnc":
-			errCh <- client.Run(ctx, roomURL, keyHex, socksPort, duo)
+			errCh <- client.Run(ctx, roomURL, keyHex, socksPort, duo, "", "")
 		}
 	}()
 

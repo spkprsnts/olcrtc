@@ -7,18 +7,19 @@ package mux
 import (
 	"encoding/binary"
 	"sync"
+	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 )
 
 type Stream struct {
-	ID          uint16
-	ClientID    uint32
-	recvBuf     []byte
-	closed      bool
-	mu          sync.Mutex
-	nextSeq     uint32
-	outOfOrder  map[uint32][]byte
+	ID         uint16
+	ClientID   uint32
+	recvBuf    []byte
+	closed     bool
+	mu         sync.Mutex
+	nextSeq    uint32
+	outOfOrder map[uint32][]byte
 }
 
 func (s *Stream) RecvBuf() []byte {
@@ -48,7 +49,7 @@ func New(clientID uint32, onSend func([]byte) error) *Multiplexer {
 		clientID:      clientID,
 		onSend:        onSend,
 		maxStreams:    10000,
-		maxBufferSize: 1024 * 1024,
+		maxBufferSize: 32 * 1024 * 1024,
 		dataReady:     make(map[uint16]chan struct{}),
 		sendSeq:       make(map[uint16]uint32),
 	}
@@ -220,26 +221,37 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	}
 	
 	if seq == stream.nextSeq {
-		if len(stream.recvBuf)+len(data) > m.maxBufferSize {
-			stream.closed = true
+		// Backpressure: if the stream buffer is full, release the mux lock and
+		// wait for the reader to drain it. Dropping/closing here would corrupt
+		// the TCP stream carried over the mux — large HTTP/2 downloads (X,
+		// Instagram, YouTube) that push data faster than conn.Write can accept
+		// would lose bytes and hang forever.
+		if s := m.waitForBufferSpace(sid, clientID, len(data)); s == nil {
 			return
+		} else {
+			stream = s
 		}
 		stream.recvBuf = append(stream.recvBuf, data...)
 		stream.nextSeq++
-		
+
 		for {
-			if nextData, ok := stream.outOfOrder[stream.nextSeq]; ok {
-				if len(stream.recvBuf)+len(nextData) > m.maxBufferSize {
-					stream.closed = true
-					return
-				}
-				stream.recvBuf = append(stream.recvBuf, nextData...)
-				delete(stream.outOfOrder, stream.nextSeq)
-				stream.nextSeq++
-				logger.Verbose("Applied out-of-order packet sid=%d seq=%d", sid, stream.nextSeq-1)
-			} else {
+			nextData, ok := stream.outOfOrder[stream.nextSeq]
+			if !ok {
 				break
 			}
+			if s := m.waitForBufferSpace(sid, clientID, len(nextData)); s == nil {
+				return
+			} else {
+				stream = s
+			}
+			nextData, ok = stream.outOfOrder[stream.nextSeq]
+			if !ok {
+				break
+			}
+			stream.recvBuf = append(stream.recvBuf, nextData...)
+			delete(stream.outOfOrder, stream.nextSeq)
+			stream.nextSeq++
+			logger.Verbose("Applied out-of-order packet sid=%d seq=%d", sid, stream.nextSeq-1)
 		}
 		
 		m.dataReadyMu.Lock()
@@ -257,6 +269,25 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 		}
 	} else {
 		logger.Verbose("Dropped duplicate packet sid=%d seq=%d (expected %d)", sid, seq, stream.nextSeq)
+	}
+}
+
+// waitForBufferSpace releases m.mu and waits until the stream's recvBuf has
+// room for `need` more bytes, then re-acquires the lock. Returns the (possibly
+// re-fetched) stream, or nil if the stream disappeared / was reset / closed.
+// Caller must hold m.mu (write-locked) on entry and will hold it on return.
+func (m *Multiplexer) waitForBufferSpace(sid uint16, clientID uint32, need int) *Stream {
+	for {
+		stream, ok := m.streams[sid]
+		if !ok || stream.ClientID != clientID || stream.closed {
+			return nil
+		}
+		if len(stream.recvBuf)+need <= m.maxBufferSize {
+			return stream
+		}
+		m.mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
+		m.mu.Lock()
 	}
 }
 

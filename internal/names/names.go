@@ -2,10 +2,17 @@ package names
 
 import (
 	"bufio"
+	_ "embed"
 	"math/rand/v2"
 	"os"
 	"strings"
 )
+
+//go:embed data/names
+var embeddedNames string
+
+//go:embed data/surnames
+var embeddedSurnames string
 
 var (
 	firstNames []string
@@ -22,6 +29,17 @@ var defaultLastNames = []string{
 	"Иванов", "Смирнов", "Кузнецов", "Попов", "Васильев", "Петров", "Соколов", "Михайлов", "Новиков", "Фёдоров",
 	"Морозов", "Волков", "Алексеев", "Лебедев", "Семёнов", "Егоров", "Павлов", "Козлов", "Степанов", "Николаев",
 	"Орлов", "Андреев", "Макаров", "Никитин", "Захаров", "Зайцев", "Соловьёв", "Борисов", "Яковлев", "Григорьев",
+}
+
+func parseEmbedded(raw string) []string {
+	var names []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			names = append(names, line)
+		}
+	}
+	return names
 }
 
 func loadNames(path string) ([]string, error) {
@@ -43,10 +61,21 @@ func loadNames(path string) ([]string, error) {
 	return names, scanner.Err()
 }
 
-func LoadNameFiles(firstPath, lastPath string) error {
-	firstNames = defaultFirstNames
-	lastNames = defaultLastNames
+func init() {
+	if names := parseEmbedded(embeddedNames); len(names) > 0 {
+		firstNames = names
+	} else {
+		firstNames = defaultFirstNames
+	}
 
+	if names := parseEmbedded(embeddedSurnames); len(names) > 0 {
+		lastNames = names
+	} else {
+		lastNames = defaultLastNames
+	}
+}
+
+func LoadNameFiles(firstPath, lastPath string) error {
 	if names, err := loadNames(firstPath); err == nil {
 		firstNames = names
 	}

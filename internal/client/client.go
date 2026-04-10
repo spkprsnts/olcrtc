@@ -31,7 +31,7 @@ type Client struct {
 	wg       sync.WaitGroup
 }
 
-func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) error {
+func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool, socksUser, socksPass string) error {
 	var key []byte
 	var err error
 
@@ -150,7 +150,7 @@ func Run(ctx context.Context, roomURL, keyHex string, socksPort int, duo bool) e
 	}
 	log.Printf("Sent reset signal to server (clientID=%d)", c.clientID)
 
-	err = c.runSOCKS5(ctx, socksPort)
+	err = c.runSOCKS5(ctx, socksPort, socksUser, socksPass)
 	
 	log.Println("Waiting for client goroutines...")
 	c.wg.Wait()
@@ -170,13 +170,13 @@ func (c *Client) onData(data []byte) {
 	c.mux.HandleFrame(plaintext)
 }
 
-func (c *Client) runSOCKS5(ctx context.Context, port int) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", port))
+func (c *Client) runSOCKS5(ctx context.Context, port int, username, password string) error {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return err
 	}
 
-	log.Printf("SOCKS5 proxy listening on 0.0.0.0:%d", port)
+	log.Printf("SOCKS5 proxy listening on 127.0.0.1:%d (auth=%v)", port, username != "")
 
 	go func() {
 		<-ctx.Done()
@@ -190,11 +190,11 @@ func (c *Client) runSOCKS5(ctx context.Context, port int) error {
 			select {
 			case <-ctx.Done():
 				log.Println("SOCKS5 listener closed")
-				
+
 				for _, peer := range c.peers {
 					peer.Close()
 				}
-				
+
 				return nil
 			default:
 				log.Printf("Accept error: %v", err)
@@ -202,15 +202,15 @@ func (c *Client) runSOCKS5(ctx context.Context, port int) error {
 			}
 		}
 
-		go c.handleSOCKS5(conn)
+		go c.handleSOCKS5(conn, username, password)
 	}
 }
 
-func (c *Client) handleSOCKS5(conn net.Conn) {
+func (c *Client) handleSOCKS5(conn net.Conn, username, password string) {
 	defer conn.Close()
 	startTime := time.Now()
 
-	buf := make([]byte, 256)
+	buf := make([]byte, 513)
 
 	if _, err := io.ReadFull(conn, buf[:2]); err != nil {
 		return
@@ -225,7 +225,48 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 		return
 	}
 
-	conn.Write([]byte{5, 0})
+	requireAuth := username != ""
+	wantMethod := byte(0x00)
+	if requireAuth {
+		wantMethod = 0x02
+	}
+	hasMethod := false
+	for i := 0; i < int(nmethods); i++ {
+		if buf[i] == wantMethod {
+			hasMethod = true
+			break
+		}
+	}
+	if !hasMethod {
+		conn.Write([]byte{5, 0xFF})
+		return
+	}
+	conn.Write([]byte{5, wantMethod})
+
+	if requireAuth {
+		// RFC 1929: VER ULEN UNAME PLEN PASSWD
+		if _, err := io.ReadFull(conn, buf[:2]); err != nil {
+			return
+		}
+		if buf[0] != 0x01 {
+			return
+		}
+		ulen := int(buf[1])
+		if _, err := io.ReadFull(conn, buf[:ulen+1]); err != nil {
+			return
+		}
+		gotUser := string(buf[:ulen])
+		plen := int(buf[ulen])
+		if _, err := io.ReadFull(conn, buf[:plen]); err != nil {
+			return
+		}
+		gotPass := string(buf[:plen])
+		if gotUser != username || gotPass != password {
+			conn.Write([]byte{0x01, 0x01})
+			return
+		}
+		conn.Write([]byte{0x01, 0x00})
+	}
 
 	if _, err := io.ReadFull(conn, buf[:4]); err != nil {
 		return

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
+	"github.com/openlibrecommunity/olcrtc/internal/protect"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -75,6 +76,9 @@ func (p *Peer) Connect(ctx context.Context) error {
 	}
 
 	settingEngine := webrtc.SettingEngine{}
+	if protect.Protector != nil {
+		settingEngine.SetICEProxyDialer(protect.NewProxyDialer())
+	}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
 	var err error
@@ -169,7 +173,11 @@ func (p *Peer) Connect(ctx context.Context) error {
 		})
 	})
 
-	ws, _, err := websocket.DefaultDialer.Dial(p.conn.ClientConfig.MediaServerURL, nil)
+	wsDialer := websocket.Dialer{
+		NetDialContext:   protect.DialContext,
+		HandshakeTimeout: 15 * time.Second,
+	}
+	ws, _, err := wsDialer.Dial(p.conn.ClientConfig.MediaServerURL, nil)
 	if err != nil {
 		return err
 	}
@@ -723,31 +731,37 @@ func (p *Peer) processSendQueue(workerID int) {
 			if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 				continue
 			}
-			
-			start := time.Now()
-			
+
+			// Wait until SCTP buffer drains. Dropping here would corrupt the
+			// carried TCP streams (the mux is a reliable transport) — large
+			// downloads like Instagram/Twitter assets would hang forever
+			// waiting for the missing bytes. Backpressure already propagates
+			// upstream via CanSend() / the sendQueue length.
+			waitStart := time.Now()
 			for p.dc.BufferedAmount() > 64*1024 {
-				time.Sleep(10 * time.Millisecond)
-				if time.Since(start) > 3*time.Second {
-					log.Printf("[WORKER-%d] Buffer wait timeout, dropping packet size=%d", workerID, len(data))
+				if p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 					break
 				}
+				time.Sleep(10 * time.Millisecond)
 			}
-			
-			if time.Since(start) > 3*time.Second {
+			if waited := time.Since(waitStart); waited > 500*time.Millisecond {
+				logger.Verbose("[WORKER-%d] Buffer drained after %v", workerID, waited)
+			}
+
+			if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 				continue
 			}
-			
+
 			sendStart := time.Now()
 			if err := p.dc.Send(data); err != nil {
 				log.Printf("[WORKER-%d] Send error: %v", workerID, err)
 			} else {
 				elapsed := time.Since(sendStart)
 				if elapsed > 50*time.Millisecond {
-					log.Printf("[WORKER-%d] Sent %d bytes in %v (buffered: %d)", 
+					log.Printf("[WORKER-%d] Sent %d bytes in %v (buffered: %d)",
 						workerID, len(data), elapsed, p.dc.BufferedAmount())
 				} else {
-					logger.Verbose("[WORKER-%d] Sent %d bytes (buffered: %d)", 
+					logger.Verbose("[WORKER-%d] Sent %d bytes (buffered: %d)",
 						workerID, len(data), p.dc.BufferedAmount())
 				}
 			}
