@@ -86,7 +86,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	p.pcSub.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		log.Printf("Subscriber PeerConnection state: %s", state.String())
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected {
@@ -101,7 +101,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	p.pcPub.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		log.Printf("Publisher PeerConnection state: %s", state.String())
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected {
@@ -120,7 +120,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 	dcReady := make(chan struct{})
 	p.dc.OnOpen(func() {
 		log.Println("DataChannel opened")
-		
+
 		numWorkers := 4
 		for i := 0; i < numWorkers; i++ {
 			p.wg.Add(1)
@@ -129,16 +129,16 @@ func (p *Peer) Connect(ctx context.Context) error {
 				p.processSendQueue(workerID)
 			}(i)
 		}
-		
+
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
 			p.monitorQueue()
 		}()
-		
+
 		close(dcReady)
 	})
-	
+
 	p.dc.OnClose(func() {
 		log.Println("DataChannel closed")
 		if p.onReconnect != nil {
@@ -187,7 +187,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
-	
+
 	ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 	p.wg.Add(1)
@@ -222,11 +222,11 @@ func (p *Peer) Send(data []byte) error {
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return fmt.Errorf("datachannel not ready")
 	}
-	
+
 	if p.sendQueueClosed.Load() {
 		return fmt.Errorf("send queue closed")
 	}
-	
+
 	select {
 	case p.sendQueue <- data:
 		return nil
@@ -251,13 +251,13 @@ func (p *Peer) sendHello() error {
 				"name": p.name,
 				"role": "SPEAKER",
 			},
-			"sendAudio":         false,
-			"sendVideo":         false,
-			"sendSharing":       false,
-			"participantId":     p.conn.PeerID,
-			"roomId":            p.conn.RoomID,
-			"serviceName":       "telemost",
-			"credentials":       p.conn.Credentials,
+			"sendAudio":     false,
+			"sendVideo":     false,
+			"sendSharing":   false,
+			"participantId": p.conn.PeerID,
+			"roomId":        p.conn.RoomID,
+			"serviceName":   "telemost",
+			"credentials":   p.conn.Credentials,
 			"capabilitiesOffer": map[string]interface{}{
 				"offerAnswerMode":        []string{"SEPARATE"},
 				"initialSubscriberOffer": []string{"ON_HELLO"},
@@ -295,7 +295,7 @@ func (p *Peer) handleSignaling() {
 			}
 			return
 		}
-		
+
 		p.wsMu.Lock()
 		if p.ws != nil {
 			p.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -320,7 +320,7 @@ func (p *Peer) handleSignaling() {
 			p.sendPong(uid)
 			continue
 		}
-		
+
 		if _, ok := msg["pong"]; ok {
 			p.sendAck(uid)
 			continue
@@ -432,7 +432,7 @@ func (p *Peer) handleICE(cand map[string]interface{}) {
 func (p *Peer) sendAck(uid string) {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
-	
+
 	p.ws.WriteJSON(map[string]interface{}{
 		"uid": uid,
 		"ack": map[string]interface{}{
@@ -446,9 +446,9 @@ func (p *Peer) sendAck(uid string) {
 func (p *Peer) sendPong(uid string) {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
-	
+
 	p.ws.WriteJSON(map[string]interface{}{
-		"uid": uid,
+		"uid":  uid,
 		"pong": map[string]interface{}{},
 	})
 }
@@ -464,11 +464,11 @@ func (p *Peer) setupICEHandlers() {
 		p.ws.WriteJSON(map[string]interface{}{
 			"uid": uuid.New().String(),
 			"webrtcIceCandidate": map[string]interface{}{
-				"candidate":    init.Candidate,
-				"sdpMid":       init.SDPMid,
+				"candidate":     init.Candidate,
+				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
-				"target":       "SUBSCRIBER",
-				"pcSeq":        1,
+				"target":        "SUBSCRIBER",
+				"pcSeq":         1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -484,11 +484,11 @@ func (p *Peer) setupICEHandlers() {
 		p.ws.WriteJSON(map[string]interface{}{
 			"uid": uuid.New().String(),
 			"webrtcIceCandidate": map[string]interface{}{
-				"candidate":    init.Candidate,
-				"sdpMid":       init.SDPMid,
+				"candidate":     init.Candidate,
+				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
-				"target":       "PUBLISHER",
-				"pcSeq":        1,
+				"target":        "PUBLISHER",
+				"pcSeq":         1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -498,17 +498,17 @@ func (p *Peer) setupICEHandlers() {
 func (p *Peer) sendLeave() {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
-	
+
 	if p.ws == nil {
 		log.Println("WebSocket already closed, cannot send leave")
 		return
 	}
-	
+
 	leave := map[string]interface{}{
 		"uid":   uuid.New().String(),
 		"leave": map[string]interface{}{},
 	}
-	
+
 	if err := p.ws.WriteJSON(leave); err != nil {
 		log.Printf("Failed to send leave: %v", err)
 	} else {
@@ -518,14 +518,14 @@ func (p *Peer) sendLeave() {
 
 func (p *Peer) Close() error {
 	log.Println("Closing peer connection...")
-	
+
 	p.sendQueueClosed.Store(true)
-	
+
 	log.Println("Sending leave message...")
 	p.sendLeave()
-	
+
 	time.Sleep(1 * time.Second)
-	
+
 	log.Println("Closing channels...")
 	if p.closeCh != nil {
 		select {
@@ -534,36 +534,36 @@ func (p *Peer) Close() error {
 			close(p.closeCh)
 		}
 	}
-	
+
 	log.Println("Waiting for goroutines...")
 	done := make(chan struct{})
 	go func() {
 		p.wg.Wait()
 		close(done)
 	}()
-	
+
 	select {
 	case <-done:
 		log.Println("All goroutines finished")
 	case <-time.After(2 * time.Second):
 		log.Println("Goroutine wait timeout")
 	}
-	
+
 	if p.dc != nil {
 		log.Println("Closing DataChannel...")
 		p.dc.Close()
 	}
-	
+
 	if p.pcPub != nil {
 		log.Println("Closing Publisher PeerConnection...")
 		p.pcPub.Close()
 	}
-	
+
 	if p.pcSub != nil {
 		log.Println("Closing Subscriber PeerConnection...")
 		p.pcSub.Close()
 	}
-	
+
 	if p.ws != nil {
 		log.Println("Closing WebSocket...")
 		p.wsMu.Lock()
@@ -571,7 +571,7 @@ func (p *Peer) Close() error {
 		p.ws.Close()
 		p.wsMu.Unlock()
 	}
-	
+
 	log.Println("Peer closed")
 	return nil
 }
@@ -579,7 +579,7 @@ func (p *Peer) Close() error {
 func (p *Peer) keepAlive() {
 	wsPingTicker := time.NewTicker(30 * time.Second)
 	defer wsPingTicker.Stop()
-	
+
 	appPingTicker := time.NewTicker(5 * time.Second)
 	defer appPingTicker.Stop()
 
@@ -626,49 +626,49 @@ func (p *Peer) keepAlive() {
 
 func (p *Peer) reconnect(ctx context.Context) error {
 	log.Println("Reconnecting...")
-	
+
 	p.sendLeave()
 	time.Sleep(500 * time.Millisecond)
-	
+
 	close(p.keepAliveCh)
-	
+
 	if p.dc != nil {
 		p.dc.Close()
 	}
-	
+
 	if p.pcPub != nil {
 		p.pcPub.Close()
 	}
-	
+
 	if p.pcSub != nil {
 		p.pcSub.Close()
 	}
-	
+
 	if p.ws != nil {
 		p.wsMu.Lock()
 		p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
 		p.ws.Close()
 		p.wsMu.Unlock()
 	}
-	
+
 	time.Sleep(3 * time.Second)
-	
+
 	p.keepAliveCh = make(chan struct{})
-	
+
 	conn, err := GetConnectionInfo(p.roomURL, p.name)
 	if err != nil {
 		return err
 	}
 	p.conn = conn
-	
+
 	if err := p.Connect(ctx); err != nil {
 		return err
 	}
-	
+
 	if p.onReconnect != nil {
 		p.onReconnect(p.dc)
 	}
-	
+
 	return nil
 }
 
@@ -679,7 +679,7 @@ func (p *Peer) SetReconnectCallback(cb func(*webrtc.DataChannel)) {
 func (p *Peer) WatchConnection(ctx context.Context) {
 	const maxReconnects = 10
 	const reconnectWindow = 5 * time.Minute
-	
+
 	for {
 		select {
 		case <-p.reconnectCh:
@@ -688,22 +688,22 @@ func (p *Peer) WatchConnection(ctx context.Context) {
 			if now.Sub(p.lastReconnect) > reconnectWindow {
 				p.reconnectCount = 0
 			}
-			
+
 			if p.reconnectCount >= maxReconnects {
 				log.Printf("Max reconnect attempts (%d) reached, stopping", maxReconnects)
 				p.reconnectMu.Unlock()
 				return
 			}
-			
+
 			p.reconnectCount++
 			p.lastReconnect = now
 			p.reconnectMu.Unlock()
-			
+
 			backoff := time.Duration(p.reconnectCount) * 2 * time.Second
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
 			}
-			
+
 			for {
 				if err := p.reconnect(ctx); err != nil {
 					log.Printf("Reconnect failed: %v, retrying in %v...", err, backoff)
@@ -724,7 +724,7 @@ func (p *Peer) WatchConnection(ctx context.Context) {
 func (p *Peer) processSendQueue(workerID int) {
 	log.Printf("[WORKER-%d] Started", workerID)
 	defer log.Printf("[WORKER-%d] Stopped", workerID)
-	
+
 	for {
 		select {
 		case data := <-p.sendQueue:
@@ -733,7 +733,7 @@ func (p *Peer) processSendQueue(workerID int) {
 			}
 
 			// Wait until SCTP buffer drains. Dropping here would corrupt the
-			// carried TCP streams (the mux is a reliable transport) — large
+			// carried TCP streams (the mux is a reliable transport); large
 			// downloads like Instagram/Twitter assets would hang forever
 			// waiting for the missing bytes. Backpressure already propagates
 			// upstream via CanSend() / the sendQueue length.
@@ -768,7 +768,7 @@ func (p *Peer) processSendQueue(workerID int) {
 						workerID, len(data), p.dc.BufferedAmount())
 				}
 			}
-			
+
 		case <-p.closeCh:
 			return
 		}
@@ -778,7 +778,7 @@ func (p *Peer) processSendQueue(workerID int) {
 func (p *Peer) monitorQueue() {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -787,8 +787,8 @@ func (p *Peer) monitorQueue() {
 			if p.dc != nil {
 				buffered = p.dc.BufferedAmount()
 			}
-			if queueLen > 1000 || buffered > 3*1024*1024 {
-				log.Printf("[QUEUE_MONITOR] queue_len=%d dc_buffered=%d", queueLen, buffered)
+			if queueLen > 800 || buffered > 3*1024*1024 {
+				log.Printf("[QUEUE_MONITOR] queue_len=%d dc_buffered=%d MB", queueLen, buffered/(1024*1024))
 			}
 		case <-p.closeCh:
 			return
@@ -797,5 +797,10 @@ func (p *Peer) monitorQueue() {
 }
 
 func (p *Peer) CanSend() bool {
-	return len(p.sendQueue) < 3000
+	queueLen := len(p.sendQueue)
+	buffered := uint64(0)
+	if p.dc != nil {
+		buffered = p.dc.BufferedAmount()
+	}
+	return queueLen < 1000 && buffered < 3*1024*1024
 }

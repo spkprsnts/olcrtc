@@ -16,15 +16,21 @@ Project that allows users to bypass blocking by parasitizing and tunneling on un
 ## satus
 
 pre-alpha
+<br>
 see all info in [issues](https://github.com/openlibrecommunity/olcrtc/issues)
+<br>
+issues? contact us at [@openlibrecommunity](https://t.me/openlibrecommunity)
+<br>
+or wait for the release or at least a beta
+
 
 ## fast start
 
 ```bash
-# server
+# server ( podman, pre configured, easy )
 ./srv.sh
 
-# client
+# client ( podman, pre configured, easy   
 ./cnc.sh
 
 # or native ( no podman ) linux

@@ -65,7 +65,7 @@ func (m *Multiplexer) OpenStream() uint16 {
 		if m.nextID == 0 {
 			m.nextID = 1
 		}
-		
+
 		if _, exists := m.streams[sid]; !exists {
 			m.streams[sid] = &Stream{
 				ID:         sid,
@@ -84,13 +84,16 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 	m.mu.RUnlock()
 
 	if !exists || stream.closed {
-		logger.Debug("SendData: stream %d not exists or closed", sid)
 		return nil
 	}
 
-	logger.Verbose("SendData: sid=%d, size=%d bytes", sid, len(data))
+	const chunkSize = 7168
+	totalChunks := (len(data) + chunkSize - 1) / chunkSize
 
-	const chunkSize = 4096
+	if totalChunks > 10 {
+		logger.Debug("SendData: sid=%d, size=%d bytes, chunks=%d", sid, len(data), totalChunks)
+	}
+
 	for i := 0; i < len(data); i += chunkSize {
 		end := i + chunkSize
 		if end > len(data) {
@@ -98,12 +101,12 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 		}
 
 		chunk := data[i:end]
-		
+
 		m.sendSeqMu.Lock()
 		seq := m.sendSeq[sid]
 		m.sendSeq[sid]++
 		m.sendSeqMu.Unlock()
-		
+
 		frame := make([]byte, 12+len(chunk))
 		binary.BigEndian.PutUint32(frame[0:4], m.clientID)
 		binary.BigEndian.PutUint16(frame[4:6], sid)
@@ -112,7 +115,6 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 		copy(frame[12:], chunk)
 
 		if err := m.onSend(frame); err != nil {
-			logger.Debug("[MUX] sid=%d onSend error: %v", sid, err)
 			return err
 		}
 	}
@@ -127,7 +129,7 @@ func (m *Multiplexer) CloseStream(sid uint16) error {
 	if stream, exists := m.streams[sid]; exists {
 		stream.closed = true
 	}
-	
+
 	m.sendSeqMu.Lock()
 	delete(m.sendSeq, sid)
 	m.sendSeqMu.Unlock()
@@ -147,7 +149,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 			clientID := binary.BigEndian.Uint32(frame[0:4])
 			sid := binary.BigEndian.Uint16(frame[4:6])
 			length := binary.BigEndian.Uint16(frame[6:8])
-			
+
 			if sid == 0xFFFF && length == 0xFFFF {
 				m.mu.Lock()
 				for streamSid, stream := range m.streams {
@@ -166,8 +168,6 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	sid := binary.BigEndian.Uint16(frame[4:6])
 	length := binary.BigEndian.Uint16(frame[6:8])
 	seq := binary.BigEndian.Uint32(frame[8:12])
-	
-	logger.Verbose("[MUX] HandleFrame sid=%d len=%d seq=%d", sid, length, seq)
 
 	if sid == 0xFFFF && length == 0xFFFF {
 		m.mu.Lock()
@@ -198,7 +198,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	stream, exists := m.streams[sid]
 	if !exists {
 		if len(m.streams) >= m.maxStreams {
@@ -219,7 +219,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 		stream.nextSeq = 0
 		stream.outOfOrder = make(map[uint32][]byte)
 	}
-	
+
 	if seq == stream.nextSeq {
 		// Backpressure: if the stream buffer is full, release the mux lock and
 		// wait for the reader to drain it. Dropping/closing here would corrupt
@@ -253,7 +253,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 			stream.nextSeq++
 			logger.Verbose("Applied out-of-order packet sid=%d seq=%d", sid, stream.nextSeq-1)
 		}
-		
+
 		m.dataReadyMu.Lock()
 		if ch, ok := m.dataReady[sid]; ok {
 			select {
@@ -265,10 +265,7 @@ func (m *Multiplexer) HandleFrame(frame []byte) {
 	} else if seq > stream.nextSeq {
 		if len(stream.outOfOrder) < 100 {
 			stream.outOfOrder[seq] = append([]byte(nil), data...)
-			logger.Verbose("Buffered out-of-order packet sid=%d seq=%d (expected %d)", sid, seq, stream.nextSeq)
 		}
-	} else {
-		logger.Verbose("Dropped duplicate packet sid=%d seq=%d (expected %d)", sid, seq, stream.nextSeq)
 	}
 }
 
@@ -337,10 +334,10 @@ func (m *Multiplexer) Reset() {
 	for _, stream := range m.streams {
 		stream.closed = true
 	}
-	
+
 	m.streams = make(map[uint16]*Stream)
 	m.nextID = 1
-	
+
 	m.sendSeqMu.Lock()
 	m.sendSeq = make(map[uint16]uint32)
 	m.sendSeqMu.Unlock()
@@ -349,14 +346,14 @@ func (m *Multiplexer) Reset() {
 func (m *Multiplexer) UpdateSendFunc(onSend func([]byte) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.onSend = onSend
 }
 
 func (m *Multiplexer) WaitForData(sid uint16) <-chan struct{} {
 	m.dataReadyMu.Lock()
 	defer m.dataReadyMu.Unlock()
-	
+
 	if _, ok := m.dataReady[sid]; !ok {
 		m.dataReady[sid] = make(chan struct{}, 1)
 	}
@@ -366,7 +363,7 @@ func (m *Multiplexer) WaitForData(sid uint16) <-chan struct{} {
 func (m *Multiplexer) CleanupDataChannel(sid uint16) {
 	m.dataReadyMu.Lock()
 	defer m.dataReadyMu.Unlock()
-	
+
 	if ch, ok := m.dataReady[sid]; ok {
 		close(ch)
 		delete(m.dataReady, sid)

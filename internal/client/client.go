@@ -166,7 +166,6 @@ func (c *Client) onData(data []byte) {
 		return
 	}
 
-	logger.Verbose("Received %d bytes from server", len(plaintext))
 	c.mux.HandleFrame(plaintext)
 }
 
@@ -208,7 +207,6 @@ func (c *Client) runSOCKS5(ctx context.Context, port int, username, password str
 
 func (c *Client) handleSOCKS5(conn net.Conn, username, password string) {
 	defer conn.Close()
-	startTime := time.Now()
 
 	buf := make([]byte, 513)
 
@@ -316,36 +314,20 @@ func (c *Client) handleSOCKS5(conn net.Conn, username, password string) {
 	}
 
 	reqData, _ := json.Marshal(req)
-	sendTime := time.Now()
-	
-	queueLen := 0
-	buffered := uint64(0)
-	for _, peer := range c.peers {
-		if peer != nil {
-			queueLen += len(peer.GetSendQueue())
-			buffered += peer.GetBufferedAmount()
-		}
-	}
-	
 	c.mux.SendData(sid, reqData)
-	log.Printf("[CLIENT] sid=%d SEND_REQUEST elapsed=%v queue_len=%d dc_buffered=%d", 
-		sid, time.Since(sendTime), queueLen, buffered)
 
 	dataReady := c.mux.WaitForData(sid)
 	timeout := time.NewTimer(10 * time.Second)
 	defer timeout.Stop()
 
-	waitStart := time.Now()
 	select {
 	case <-dataReady:
-		log.Printf("[CLIENT] sid=%d RESPONSE_RECEIVED wait_time=%v total_elapsed=%v", sid, time.Since(waitStart), time.Since(startTime))
 		stream := c.mux.GetStream(sid)
 		if stream == nil || len(stream.RecvBuf()) == 0 {
 			conn.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0})
 			return
 		}
 	case <-timeout.C:
-		log.Printf("[CLIENT] sid=%d TIMEOUT after wait_time=%v total_elapsed=%v", sid, time.Since(waitStart), time.Since(startTime))
 		conn.Write([]byte{5, 4, 0, 1, 0, 0, 0, 0, 0, 0})
 		return
 	}
@@ -353,7 +335,6 @@ func (c *Client) handleSOCKS5(conn net.Conn, username, password string) {
 	c.mux.ReadStream(sid)
 
 	conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
-	log.Printf("[CLIENT] sid=%d SOCKS5_READY total_elapsed=%v", sid, time.Since(startTime))
 
 	done := make(chan struct{})
 	streamClosed := make(chan struct{})
@@ -377,20 +358,22 @@ func (c *Client) handleSOCKS5(conn net.Conn, username, password string) {
 		defer close(streamClosed)
 		defer c.mux.CleanupDataChannel(sid)
 
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
-			dataReady := c.mux.WaitForData(sid)
-			
 			select {
 			case <-done:
 				return
-			case <-dataReady:
-				for {
-					data := c.mux.ReadStream(sid)
-					if len(data) == 0 {
-						break
-					}
-					if _, err := conn.Write(data); err != nil {
-						return
+			case <-ticker.C:
+				data := c.mux.ReadStream(sid)
+				if len(data) > 0 {
+					for len(data) > 0 {
+						n, err := conn.Write(data)
+						if err != nil {
+							return
+						}
+						data = data[n:]
 					}
 				}
 
