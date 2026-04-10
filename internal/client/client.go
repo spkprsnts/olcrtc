@@ -317,20 +317,22 @@ func (c *Client) handleSOCKS5(conn net.Conn) {
 		defer close(streamClosed)
 		defer c.mux.CleanupDataChannel(sid)
 
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
-			dataReady := c.mux.WaitForData(sid)
-			
 			select {
 			case <-done:
 				return
-			case <-dataReady:
-				for {
-					data := c.mux.ReadStream(sid)
-					if len(data) == 0 {
-						break
-					}
-					if _, err := conn.Write(data); err != nil {
-						return
+			case <-ticker.C:
+				data := c.mux.ReadStream(sid)
+				if len(data) > 0 {
+					for len(data) > 0 {
+						n, err := conn.Write(data)
+						if err != nil {
+							return
+						}
+						data = data[n:]
 					}
 				}
 
