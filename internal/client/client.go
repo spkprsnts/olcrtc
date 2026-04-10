@@ -119,7 +119,11 @@ func RunWithReady(ctx context.Context, roomURL, keyHex string, socksPort int, du
 		c.peers = append(c.peers, peer)
 
 		peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
-			log.Printf("Client peer %d reconnected - resetting multiplexer state", peerID)
+			if dc == nil {
+				log.Printf("Client peer %d channel closed - resetting multiplexer state", peerID)
+			} else {
+				log.Printf("Client peer %d reconnected - resetting multiplexer state", peerID)
+			}
 
 			c.mux.UpdateSendFunc(func(frame []byte) error {
 				encrypted, err := c.cipher.Encrypt(frame)

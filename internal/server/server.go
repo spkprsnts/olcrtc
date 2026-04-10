@@ -136,7 +136,11 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer string
 		s.peers = append(s.peers, peer)
 
 		peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
-			log.Printf("Server peer %d reconnected - resetting multiplexer state", peerID)
+			if dc == nil {
+				log.Printf("Server peer %d channel closed - resetting multiplexer state", peerID)
+			} else {
+				log.Printf("Server peer %d reconnected - resetting multiplexer state", peerID)
+			}
 
 			s.connMu.Lock()
 			for sid, conn := range s.connections {
