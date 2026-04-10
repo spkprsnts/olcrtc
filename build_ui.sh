@@ -15,12 +15,13 @@ echo "✓ olcrtc binary built: ./olcrtc"
 echo ""
 echo "[2/2] Building UI binary..."
 cd ui
-go build -o ../ui .
+go build -o olcrtc-ui .
+mv olcrtc-ui ../olcrtc-ui
 cd ..
-echo "✓ UI binary built: ./ui"
+echo "✓ UI binary built: ./olcrtc-ui"
 
 echo ""
 echo "=== Build Complete ==="
 echo "Binaries ready:"
 echo "  - ./olcrtc"
-echo "  - ./ui"
+echo "  - ./olcrtc-ui"
