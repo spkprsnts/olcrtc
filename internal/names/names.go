@@ -1,9 +1,12 @@
+// Package names generates display names for Telemost peers.
 package names
 
 import (
 	"bufio"
+	"crypto/rand"
 	_ "embed"
-	"math/rand/v2"
+	"fmt"
+	"math/big"
 	"os"
 	"strings"
 )
@@ -14,22 +17,11 @@ var embeddedNames string
 //go:embed data/surnames
 var embeddedSurnames string
 
+//nolint:gochecknoglobals // Package-level state keeps the loaded name dictionaries cached for the process lifetime.
 var (
-	firstNames []string
-	lastNames  []string
+	firstNames = parseEmbedded(embeddedNames)
+	lastNames  = parseEmbedded(embeddedSurnames)
 )
-
-var defaultFirstNames = []string{
-	"Александр", "Дмитрий", "Максим", "Сергей", "Андрей", "Алексей", "Артём", "Илья", "Кирилл", "Михаил",
-	"Никита", "Матвей", "Роман", "Егор", "Арсений", "Иван", "Денис", "Евгений", "Даниил", "Тимофей",
-	"Владислав", "Игорь", "Владимир", "Павел", "Руслан", "Марк", "Константин", "Николай", "Олег", "Виктор",
-}
-
-var defaultLastNames = []string{
-	"Иванов", "Смирнов", "Кузнецов", "Попов", "Васильев", "Петров", "Соколов", "Михайлов", "Новиков", "Фёдоров",
-	"Морозов", "Волков", "Алексеев", "Лебедев", "Семёнов", "Егоров", "Павлов", "Козлов", "Степанов", "Николаев",
-	"Орлов", "Андреев", "Макаров", "Никитин", "Захаров", "Зайцев", "Соловьёв", "Борисов", "Яковлев", "Григорьев",
-}
 
 func parseEmbedded(raw string) []string {
 	var names []string
@@ -39,15 +31,19 @@ func parseEmbedded(raw string) []string {
 			names = append(names, line)
 		}
 	}
+
 	return names
 }
 
 func loadNames(path string) ([]string, error) {
+	//nolint:gosec // Paths come from local CLI/runtime configuration; loading override files is intentional here.
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open names file %q: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	var names []string
 	scanner := bufio.NewScanner(file)
@@ -58,23 +54,14 @@ func loadNames(path string) ([]string, error) {
 		}
 	}
 
-	return names, scanner.Err()
-}
-
-func init() {
-	if names := parseEmbedded(embeddedNames); len(names) > 0 {
-		firstNames = names
-	} else {
-		firstNames = defaultFirstNames
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan names file %q: %w", path, err)
 	}
 
-	if names := parseEmbedded(embeddedSurnames); len(names) > 0 {
-		lastNames = names
-	} else {
-		lastNames = defaultLastNames
-	}
+	return names, nil
 }
 
+// LoadNameFiles overrides embedded name dictionaries from local files when they are present.
 func LoadNameFiles(firstPath, lastPath string) error {
 	if names, err := loadNames(firstPath); err == nil && len(names) > 0 {
 		firstNames = names
@@ -87,16 +74,24 @@ func LoadNameFiles(firstPath, lastPath string) error {
 	return nil
 }
 
+// Generate returns a random display name assembled from the currently loaded dictionaries.
 func Generate() string {
-	if len(firstNames) == 0 {
-		firstNames = defaultFirstNames
-	}
-	if len(lastNames) == 0 {
-		lastNames = defaultLastNames
+	if len(firstNames) == 0 || len(lastNames) == 0 {
+		return "anonymous user"
 	}
 
-	first := firstNames[rand.IntN(len(firstNames))]
-	last := lastNames[rand.IntN(len(lastNames))]
+	return firstNames[randomIndex(len(firstNames))] + " " + lastNames[randomIndex(len(lastNames))]
+}
 
-	return first + " " + last
+func randomIndex(limit int) int {
+	if limit <= 1 {
+		return 0
+	}
+
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		return 0
+	}
+
+	return int(n.Int64())
 }

@@ -4,7 +4,7 @@ package mobile
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -26,11 +26,21 @@ type LogWriter interface {
 }
 
 var (
+	errAlreadyRunning     = errors.New("olcRTC already running")
+	errRoomIDRequired     = errors.New("roomID is required")
+	errKeyHexRequired     = errors.New("keyHex is required")
+	errNotRunning         = errors.New("olcRTC is not running")
+	errStoppedBeforeReady = errors.New("olcRTC stopped before becoming ready")
+	errStartTimedOut      = errors.New("olcRTC start timed out")
+)
+
+//nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
+var (
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	done   chan struct{}
 	ready  chan struct{}
-	runErr error
+	errRun error
 )
 
 // SetProtector sets the Android VPN socket protector.
@@ -57,9 +67,10 @@ func SetDebug(enabled bool) {
 	logger.SetVerbose(enabled)
 	if enabled {
 		log.SetFlags(log.Ltime | log.Lshortfile)
-	} else {
-		log.SetFlags(log.Ltime)
+		return
 	}
+
+	log.SetFlags(log.Ltime)
 }
 
 // Start launches the olcRTC client in background.
@@ -67,42 +78,52 @@ func SetDebug(enabled bool) {
 // keyHex: 64-char hex encryption key
 // socksPort: local SOCKS5 proxy port (e.g. 10808)
 // duo: use dual channels for higher throughput
-// socksUser/socksPass: SOCKS5 credentials (empty = no auth)
+// socksUser/socksPass: SOCKS5 credentials (empty = no auth).
 func Start(roomID, keyHex string, socksPort int, duo bool, socksUser, socksPass string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if cancel != nil {
-		return fmt.Errorf("olcRTC already running")
-	}
-
-	if roomID == "" {
-		return fmt.Errorf("roomID is required")
-	}
-	if keyHex == "" {
-		return fmt.Errorf("keyHex is required")
+	switch {
+	case cancel != nil:
+		return errAlreadyRunning
+	case roomID == "":
+		return errRoomIDRequired
+	case keyHex == "":
+		return errKeyHexRequired
 	}
 
 	roomURL := "https://telemost.yandex.ru/j/" + roomID
 
-	ctx, c := context.WithCancel(context.Background())
-	cancel = c
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	cancel = cancelFunc
 	done = make(chan struct{})
 	ready = make(chan struct{})
 	localReady := ready
-	runErr = nil
+	errRun = nil
 
 	var readyOnce sync.Once
-
 	go func() {
-		err := client.RunWithReady(ctx, roomURL, keyHex, socksPort, duo, socksUser, socksPass, func() {
-			readyOnce.Do(func() {
-				close(localReady)
-			})
-		})
+		defer cancelFunc()
+
+		err := client.RunWithReady(
+			ctx,
+			roomURL,
+			keyHex,
+			socksPort,
+			duo,
+			"",
+			socksUser,
+			socksPass,
+			func() {
+				readyOnce.Do(func() {
+					close(localReady)
+				})
+			},
+		)
+
 		mu.Lock()
 		cancel = nil
-		runErr = err
+		errRun = err
 		mu.Unlock()
 		close(done)
 	}()
@@ -111,19 +132,22 @@ func Start(roomID, keyHex string, socksPort int, duo bool, socksUser, socksPass 
 }
 
 // WaitReady blocks until the Telemost peers are connected and the local SOCKS5 listener is ready.
+//
+//nolint:cyclop // The control flow is intentionally linear so mobile callers can observe each startup state clearly.
 func WaitReady(timeoutMillis int) error {
 	mu.Lock()
 	r := ready
 	d := done
-	err := runErr
+	runErr := errRun
 	running := cancel != nil
 	mu.Unlock()
 
 	if r == nil {
-		if err != nil {
-			return err
+		if runErr != nil {
+			return runErr
 		}
-		return fmt.Errorf("olcRTC is not running")
+
+		return errNotRunning
 	}
 
 	select {
@@ -133,10 +157,11 @@ func WaitReady(timeoutMillis int) error {
 	}
 
 	if !running {
-		if err != nil {
-			return err
+		if runErr != nil {
+			return runErr
 		}
-		return fmt.Errorf("olcRTC stopped before becoming ready")
+
+		return errStoppedBeforeReady
 	}
 
 	timer := time.NewTimer(time.Duration(timeoutMillis) * time.Millisecond)
@@ -147,32 +172,33 @@ func WaitReady(timeoutMillis int) error {
 		return nil
 	case <-d:
 		mu.Lock()
-		err := runErr
+		runErr = errRun
 		mu.Unlock()
-		if err != nil {
-			return err
+		if runErr != nil {
+			return runErr
 		}
-		return fmt.Errorf("olcRTC stopped before becoming ready")
+
+		return errStoppedBeforeReady
 	case <-timer.C:
-		return fmt.Errorf("olcRTC start timed out")
+		return errStartTimedOut
 	}
 }
 
 // Stop gracefully stops the olcRTC client.
 func Stop() {
 	mu.Lock()
-	c := cancel
-	d := done
+	cancelFunc := cancel
+	doneCh := done
 	mu.Unlock()
 
-	if c == nil {
+	if cancelFunc == nil {
 		return
 	}
 
-	c()
+	cancelFunc()
 
-	if d != nil {
-		<-d
+	if doneCh != nil {
+		<-doneCh
 	}
 }
 
@@ -188,7 +214,7 @@ type logBridge struct {
 	w LogWriter
 }
 
-func (b *logBridge) Write(p []byte) (n int, err error) {
+func (b *logBridge) Write(p []byte) (int, error) {
 	b.w.WriteLog(string(p))
 	return len(p), nil
 }

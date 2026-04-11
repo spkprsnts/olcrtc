@@ -32,9 +32,8 @@ RUN apk add --no-cache ca-certificates tzdata && \
     chown -R olcrtc:olcrtc /var/lib/olcrtc
 
 COPY --from=build /out/olcrtc /usr/local/bin/olcrtc
-COPY internal/names/data/names internal/names/data/surnames /usr/share/olcrtc/
-COPY docker/olcrtc-entrypoint.sh /usr/local/bin/olcrtc-entrypoint
-COPY docker/olcrtc-healthcheck.sh /usr/local/bin/olcrtc-healthcheck
+COPY script/docker/olcrtc-entrypoint.sh /usr/local/bin/olcrtc-entrypoint
+COPY script/docker/olcrtc-healthcheck.sh /usr/local/bin/olcrtc-healthcheck
 
 RUN chmod 0755 /usr/local/bin/olcrtc /usr/local/bin/olcrtc-entrypoint /usr/local/bin/olcrtc-healthcheck
 
