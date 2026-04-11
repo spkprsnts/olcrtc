@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+func pipeOutput(reader io.ReadCloser, prefix string) {
+	defer reader.Close()
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if prefix != "" {
+			log("olcrtc %s: %s", prefix, line)
+		} else {
+			log("olcrtc: %s", line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log("ERROR: Failed to read %s: %v", prefix, err)
+	}
+}
+
 func (p *Program) olcrtcRun() {
 	log("%s - Starting olcrtc process...", time.Now().Format("2006-01-02 15:04:05"))
 	if p.RunString == "" {
@@ -25,9 +41,25 @@ func (p *Program) olcrtcRun() {
 		cmd = exec.Command("sh", "-c", p.RunString)
 	}
 
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log("ERROR: Failed to create stdout pipe: %v", err)
+		p.showError(err)
+		p.MarkUncheck()
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log("ERROR: Failed to create stderr pipe: %v", err)
+		p.showError(err)
+		p.MarkUncheck()
+		return
+	}
+
 	p.CmdMu.Lock()
 	p.Cmd = cmd
-	err := p.Cmd.Start()
+	err = p.Cmd.Start()
 	pid := 0
 	if err == nil && p.Cmd.Process != nil {
 		pid = p.Cmd.Process.Pid
@@ -43,6 +75,10 @@ func (p *Program) olcrtcRun() {
 		p.MarkUncheck()
 	} else {
 		log("olcrtc process started (PID: %d)", pid)
+
+		go pipeOutput(stdout, "stdout")
+		go pipeOutput(stderr, "stderr")
+
 		go func() {
 			p.CmdMu.Lock()
 			cmd := p.Cmd
