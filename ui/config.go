@@ -47,7 +47,7 @@ func (p *Program) loadConfig() *Config {
 		}
 		return cfg
 	}
-	if err := json.Unmarshal(data, p.Config); err != nil {
+	if err := json.Unmarshal(data, cfg); err != nil {
 		log("WARNING: Could not parse config file: %v", err)
 		return cfg
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"time"
 )
 
@@ -18,7 +17,7 @@ func (p *Program) olcrtcRun() {
 	}
 
 	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
+	if p.Config.Os == "windows" {
 		cmd = exec.Command("cmd.exe", "/C", p.RunString)
 	} else {
 		cmd = exec.Command("sh", "-c", p.RunString)
