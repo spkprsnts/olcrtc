@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -27,6 +28,18 @@ func isValidPort(portStr string) bool {
 		return false
 	}
 	return port > 0 && port <= 65535
+}
+
+func isValidConferenceID(conferenceID string) bool {
+	conferenceID = strings.TrimSpace(conferenceID)
+	if conferenceID == "" {
+		return false
+	}
+	matched, err := regexp.MatchString(`^\d+$`, conferenceID)
+	if err != nil {
+		return false
+	}
+	return matched
 }
 
 func (p *Program) getConfigPath() string {
@@ -67,6 +80,10 @@ func (p *Program) loadConfig() *Config {
 		return cfg
 	}
 	cfg.ConferenceID = strings.ReplaceAll(cfg.ConferenceID, " ", "")
+	if !isValidConferenceID(cfg.ConferenceID) {
+		log("WARNING: Invalid conference ID in config (must be numbers only)")
+		cfg.ConferenceID = ""
+	}
 	if !isValidPort(cfg.SocksPort) {
 		log("WARNING: Invalid port in config, using default: 1080")
 		cfg.SocksPort = "1080"
@@ -83,6 +100,12 @@ func (p *Program) saveConfig(dns, encryptionKey, socksPort, conferenceID string)
 	if !isValidPort(socksPort) {
 		log("ERROR: Invalid port: %s", socksPort)
 		p.showError(fmt.Errorf("invalid port: must be between 1 and 65535"))
+		return
+	}
+
+	if !isValidConferenceID(conferenceID) {
+		log("ERROR: Invalid conference ID: %s", conferenceID)
+		p.showError(fmt.Errorf("invalid conference ID: must contain only numbers"))
 		return
 	}
 
