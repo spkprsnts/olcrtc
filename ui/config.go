@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -51,12 +52,15 @@ func (p *Program) loadConfig() *Config {
 		log("WARNING: Could not parse config file: %v", err)
 		return cfg
 	}
+	cfg.ConferenceID = strings.ReplaceAll(cfg.ConferenceID, " ", "")
 	log("Config loaded successfully")
 	return cfg
 }
 
 func (p *Program) saveConfig(dns, encryptionKey, socksPort, conferenceID string) {
 	log("Saving configuration...")
+
+	conferenceID = strings.ReplaceAll(conferenceID, " ", "")
 
 	p.Config = &Config{
 		DNS:           dns,
