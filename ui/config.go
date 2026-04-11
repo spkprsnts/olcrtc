@@ -2,13 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 type Config struct {
-	DNS           string `json:"dns"` // на потом
+	DNS           string `json:"dns"` // todo
 	EncryptionKey string `json:"encryption_key"`
 	SocksPort     string `json:"socks_port"`
 	ConferenceID  string `json:"conference_id"`
@@ -38,7 +37,7 @@ func loadConfig() *Config {
 		ConferenceID:  "",
 	}
 
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			log("Config file not found. Using default configuration.")
@@ -75,7 +74,7 @@ func (p *Program) saveConfig(dns, encryptionKey, socksPort, conferenceID string)
 		return
 	}
 
-	if err := ioutil.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		log("ERROR: Could not write config file: %v", err)
 		p.showError(err)
 		return
