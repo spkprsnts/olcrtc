@@ -15,8 +15,7 @@ echo "✓ olcrtc binary built: ./olcrtc"
 echo ""
 echo "[2/2] Building UI binary..."
 cd ui
-go build -o olcrtc-ui .
-mv olcrtc-ui ../olcrtc-ui
+go build -o ../olcrtc-ui .
 cd ..
 echo "✓ UI binary built: ./olcrtc-ui"
 
