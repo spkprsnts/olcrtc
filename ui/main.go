@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"runtime"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -27,11 +28,14 @@ func main() {
 
 func NewProgram() *Program {
 	log("Initializing program...")
-	cfg := loadConfig()
+	uOs := runtime.GOOS
+	log("RUNTIME: Detected OS - %v", uOs)
 	p := &Program{
-		App:    app.New(),
-		Config: cfg,
+		App: app.New(),
 	}
+	cfg := p.loadConfig()
+	cfg.Os = uOs
+	p.Config = cfg
 	p.buildRunString(cfg.ConferenceID, cfg.EncryptionKey, cfg.SocksPort, cfg.DNS)
 	return p
 }

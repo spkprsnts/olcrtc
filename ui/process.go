@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 )
 
@@ -16,7 +17,13 @@ func (p *Program) olcrtcRun() {
 		return
 	}
 
-	p.Cmd = exec.Command("sh", "-c", p.RunString)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd.exe", "/C", p.RunString)
+	} else {
+		cmd = exec.Command("sh", "-c", p.RunString)
+	}
+	p.Cmd = cmd
 	err := p.Cmd.Start()
 	if err != nil {
 		log("ERROR: Failed to start olcrtc: %v", err)
