@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,12 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pion/webrtc/v4"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/telemost"
+	"github.com/pion/webrtc/v4"
 )
 
 type Server struct {
@@ -28,6 +27,8 @@ type Server struct {
 	mux            *mux.Multiplexer
 	connections    map[uint16]net.Conn
 	connMu         sync.RWMutex
+	streamPumps    map[uint16]net.Conn
+	pumpMu         sync.Mutex
 	peerIdx        atomic.Uint32
 	wg             sync.WaitGroup
 	dnsServer      string
@@ -44,6 +45,8 @@ type ConnectRequest struct {
 }
 
 func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer, socksProxyAddr string, socksProxyPort int) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var key []byte
 	var err error
 
@@ -76,6 +79,7 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer, socks
 	s := &Server{
 		cipher:         cipher,
 		connections:    make(map[uint16]net.Conn),
+		streamPumps:    make(map[uint16]net.Conn),
 		peers:          make([]*telemost.Peer, 0),
 		dnsServer:      dnsServer,
 		socksProxyAddr: socksProxyAddr,
@@ -124,14 +128,23 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer, socks
 	})
 
 	for i := 0; i < peerCount; i++ {
+		peerID := i
 		peer, err := telemost.NewPeer(roomURL, names.Generate(), s.onData)
 		if err != nil {
 			return err
 		}
+		peer.SetEndedCallback(func(reason string) {
+			log.Printf("Server peer %d reported conference end: %s", peerID, reason)
+			cancel()
+		})
 		s.peers = append(s.peers, peer)
 
 		peer.SetReconnectCallback(func(dc *webrtc.DataChannel) {
-			log.Printf("Server peer %d reconnected - resetting multiplexer state", i)
+			if dc == nil {
+				log.Printf("Server peer %d channel closed - resetting multiplexer state", peerID)
+			} else {
+				log.Printf("Server peer %d reconnected - resetting multiplexer state", peerID)
+			}
 
 			s.connMu.Lock()
 			for sid, conn := range s.connections {
@@ -158,20 +171,20 @@ func Run(ctx context.Context, roomURL, keyHex string, duo bool, dnsServer, socks
 			log.Println("Server multiplexer reset complete")
 		})
 
-		log.Printf("Connecting peer %d to Telemost...", i)
-		if err := peer.Connect(ctx); err != nil {
+		log.Printf("Connecting peer %d to Telemost...", peerID)
+		if err := peer.Connect(runCtx); err != nil {
 			return err
 		}
-		log.Printf("Peer %d connected", i)
+		log.Printf("Peer %d connected", peerID)
 
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			peer.WatchConnection(ctx)
+			peer.WatchConnection(runCtx)
 		}()
 	}
 
-	err = s.run(ctx)
+	err = s.run(runCtx)
 
 	log.Println("Waiting for server goroutines...")
 	s.wg.Wait()
@@ -220,47 +233,27 @@ func (s *Server) onData(data []byte) {
 		return
 	}
 
-	if len(plaintext) >= 12 {
-		clientID := binary.BigEndian.Uint32(plaintext[0:4])
-		sid := binary.BigEndian.Uint16(plaintext[4:6])
-		length := binary.BigEndian.Uint16(plaintext[6:8])
-
-		if sid == 0xFFFF && length == 0xFFFF {
-			log.Printf("Received reset signal from client (clientID=%d) - cleaning up", clientID)
-			s.connMu.Lock()
-			for streamSid, conn := range s.connections {
-				stream := s.mux.GetStream(streamSid)
-				if stream != nil && stream.ClientID == clientID {
-					if conn != nil {
-						conn.Close()
-					}
-					delete(s.connections, streamSid)
-				}
-			}
-			s.connMu.Unlock()
-		}
-	} else if len(plaintext) >= 8 {
-		clientID := binary.BigEndian.Uint32(plaintext[0:4])
-		sid := binary.BigEndian.Uint16(plaintext[4:6])
-		length := binary.BigEndian.Uint16(plaintext[6:8])
-
-		if sid == 0xFFFF && length == 0xFFFF {
-			log.Printf("Received reset signal from client (clientID=%d) - cleaning up", clientID)
-			s.connMu.Lock()
-			for streamSid, conn := range s.connections {
-				stream := s.mux.GetStream(streamSid)
-				if stream != nil && stream.ClientID == clientID {
-					if conn != nil {
-						conn.Close()
-					}
-					delete(s.connections, streamSid)
-				}
-			}
-			s.connMu.Unlock()
-		}
+	if control, ok := mux.ParseControlFrame(plaintext); ok && control.Type == mux.ControlResetClient {
+		log.Printf("Received reset signal from client (clientID=%d) - cleaning up", control.ClientID)
+		s.closeClientConnections(control.ClientID)
 	}
 
 	s.mux.HandleFrame(plaintext)
+}
+
+func (s *Server) closeClientConnections(clientID uint32) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+
+	for streamSid, conn := range s.connections {
+		stream := s.mux.GetStream(streamSid)
+		if stream != nil && stream.ClientID == clientID {
+			if conn != nil {
+				conn.Close()
+			}
+			delete(s.connections, streamSid)
+		}
+	}
 }
 
 func (s *Server) run(ctx context.Context) error {
@@ -290,54 +283,81 @@ func (s *Server) run(ctx context.Context) error {
 
 		case <-ticker.C:
 		}
-
 		sids := s.mux.GetStreams()
 
 		for _, sid := range sids {
-			go func(sid uint16) {
-				data := s.mux.ReadStream(sid)
-				if len(data) > 0 {
-					s.connMu.RLock()
-					conn, exists := s.connections[sid]
-					s.connMu.RUnlock()
+			if s.mux.StreamClosed(sid) {
+				s.closeStreamConnection(sid)
+				continue
+			}
 
-					if exists && conn != nil {
-						if _, err := conn.Write(data); err != nil {
-							s.mux.CloseStream(sid)
-							conn.Close()
-							s.connMu.Lock()
-							delete(s.connections, sid)
-							s.connMu.Unlock()
-						}
-					} else {
-						var req ConnectRequest
-						if err := json.Unmarshal(data, &req); err == nil && req.Cmd == "connect" {
-							log.Printf("[SERVER] sid=%d RECEIVED_CONNECT_REQUEST %s:%d", sid, req.Addr, req.Port)
-							s.connMu.Lock()
-							if oldConn, exists := s.connections[sid]; exists && oldConn != nil {
-								oldConn.Close()
-							}
-							s.connMu.Unlock()
-							go s.handleConnect(sid, req)
-						}
-					}
-				}
+			if s.hasConnection(sid) {
+				continue
+			}
 
-				if s.mux.StreamClosed(sid) {
-					s.connMu.Lock()
-					conn, exists := s.connections[sid]
-					if exists && conn != nil {
-						conn.Close()
-						delete(s.connections, sid)
-					}
-					s.connMu.Unlock()
-				}
-			}(sid)
+			data := s.mux.ReadStream(sid)
+			if len(data) == 0 {
+				continue
+			}
+
+			var req ConnectRequest
+			if err := json.Unmarshal(data, &req); err == nil && req.Cmd == "connect" {
+				log.Printf("[SERVER] sid=%d RECEIVED_CONNECT_REQUEST %s:%d", sid, req.Addr, req.Port)
+				s.closeStreamConnection(sid)
+				go s.handleConnect(ctx, sid, req)
+			}
 		}
 	}
 }
 
-func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
+func (s *Server) hasConnection(sid uint16) bool {
+	s.connMu.RLock()
+	defer s.connMu.RUnlock()
+	conn := s.connections[sid]
+	return conn != nil
+}
+
+func (s *Server) closeStreamConnection(sid uint16) {
+	s.connMu.Lock()
+	conn := s.connections[sid]
+	if conn != nil {
+		conn.Close()
+		delete(s.connections, sid)
+	}
+	s.connMu.Unlock()
+}
+
+func (s *Server) closeStreamConnectionIfCurrent(sid uint16, expected net.Conn) {
+	s.connMu.Lock()
+	conn := s.connections[sid]
+	if conn == expected {
+		conn.Close()
+		delete(s.connections, sid)
+	}
+	s.connMu.Unlock()
+}
+
+func (s *Server) markStreamPump(sid uint16, conn net.Conn) bool {
+	s.pumpMu.Lock()
+	defer s.pumpMu.Unlock()
+	if current := s.streamPumps[sid]; current == conn {
+		return false
+	} else if current != nil {
+		current.Close()
+	}
+	s.streamPumps[sid] = conn
+	return true
+}
+
+func (s *Server) unmarkStreamPump(sid uint16, conn net.Conn) {
+	s.pumpMu.Lock()
+	if s.streamPumps[sid] == conn {
+		delete(s.streamPumps, sid)
+	}
+	s.pumpMu.Unlock()
+}
+
+func (s *Server) handleConnect(ctx context.Context, sid uint16, req ConnectRequest) {
 	startTime := time.Now()
 	addr := fmt.Sprintf("%s:%d", req.Addr, req.Port)
 	logger.Verbose("Handling connect request sid=%d to %s", sid, addr)
@@ -379,7 +399,6 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 		}
 		logger.Verbose("SOCKS5 proxy dial took %v for sid=%d", time.Since(dialStart), sid)
 	}
-
 	dialElapsed := time.Since(dialStart)
 
 	if err != nil {
@@ -388,6 +407,7 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 		return
 	}
 
+	logger.Verbose("TCP dial took %v for sid=%d", dialElapsed, sid)
 	s.connMu.Lock()
 	s.connections[sid] = conn
 	s.connMu.Unlock()
@@ -395,6 +415,7 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 	log.Printf("[SERVER] sid=%d CONNECT_SUCCESS dial_time=%v", sid, dialElapsed)
 
 	s.mux.SendData(sid, []byte{0x00})
+	s.startStreamPump(ctx, sid, conn)
 
 	go func() {
 		defer func() {
@@ -429,6 +450,41 @@ func (s *Server) handleConnect(sid uint16, req ConnectRequest) {
 			if time.Since(lastLog) > 5*time.Second {
 				log.Printf("[SERVER] sid=%d TRANSFER_PROGRESS sent=%d MB", sid, totalSent/(1024*1024))
 				lastLog = time.Now()
+			}
+		}
+	}()
+}
+
+func (s *Server) startStreamPump(ctx context.Context, sid uint16, conn net.Conn) {
+	if !s.markStreamPump(sid, conn) {
+		return
+	}
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer s.unmarkStreamPump(sid, conn)
+
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				data := s.mux.ReadStream(sid)
+				if len(data) > 0 {
+					if _, err := conn.Write(data); err != nil {
+						s.mux.CloseStream(sid)
+						s.closeStreamConnectionIfCurrent(sid, conn)
+						return
+					}
+				}
+				if s.mux.StreamClosed(sid) {
+					s.closeStreamConnectionIfCurrent(sid, conn)
+					return
+				}
 			}
 		}
 	}()
