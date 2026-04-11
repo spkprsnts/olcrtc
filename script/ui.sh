@@ -2,25 +2,28 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_DIR="$PROJECT_ROOT/build"
+
+mkdir -p "$BUILD_DIR"
+
 echo "=== Building OlcRTC ==="
 echo ""
 
-# Build olcrtc binary
 echo "[1/2] Building olcrtc binary..."
-cd "$(dirname "$0")"
-go build -o olcrtc ./cmd/olcrtc/main.go
-echo "✓ olcrtc binary built: ./olcrtc"
+cd "$PROJECT_ROOT"
+go build -o "$BUILD_DIR/olcrtc" ./cmd/olcrtc/main.go
+echo "✓ olcrtc binary built: $BUILD_DIR/olcrtc"
 
-# Build UI binary
 echo ""
 echo "[2/2] Building UI binary..."
-cd ui
-go build -o ../olcrtc-ui .
-cd ..
-echo "✓ UI binary built: ./olcrtc-ui"
+cd "$PROJECT_ROOT/ui"
+go build -o "$BUILD_DIR/olcrtc-ui" .
+echo "✓ UI binary built: $BUILD_DIR/olcrtc-ui"
 
 echo ""
 echo "=== Build Complete ==="
 echo "Binaries ready:"
-echo "  - ./olcrtc"
-echo "  - ./olcrtc-ui"
+echo "  - $BUILD_DIR/olcrtc"
+echo "  - $BUILD_DIR/olcrtc-ui"
