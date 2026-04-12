@@ -19,8 +19,13 @@ if ! command -v podman &> /dev/null; then
 
     if [ "$(id -u)" -eq 0 ]; then
         SUDO=""
-    else
+    elif command -v sudo &> /dev/null; then
         SUDO="sudo"
+    elif command -v doas &> /dev/null; then
+        SUDO="doas"
+    else
+        echo "[X] No sudo/doas found and not running as root. Cannot install podman."
+        exit 1
     fi
 
     if command -v apt &> /dev/null; then
