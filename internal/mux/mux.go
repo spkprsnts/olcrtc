@@ -1,11 +1,9 @@
-// ===========================================
-// AI GENERATED / AI GENERATED / AI GENERATED
-// ===========================================
-
+// Package mux provides a multiplexer for multiple streams over a single connection.
 package mux
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -14,14 +12,14 @@ import (
 )
 
 var (
-	ErrClientResetID = fmt.Errorf("client reset requires a non-zero client id")
+	ErrClientResetID = errors.New("client reset requires a non-zero client id") //nolint:revive
 )
 
 const (
 	ControlStreamID uint16 = 0xFFFF //nolint:revive
 	ControlLength   uint16 = 0xFFFF //nolint:revive
 
-	ControlResetClient uint32 = 1 //nolint:revive
+	ControlResetClient uint32 = 1
 )
 
 type ControlFrame struct { //nolint:revive
@@ -127,7 +125,7 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error { //nolint:revive
 		frame := make([]byte, 12+len(chunk))
 		binary.BigEndian.PutUint32(frame[0:4], m.clientID)
 		binary.BigEndian.PutUint16(frame[4:6], sid)
-		binary.BigEndian.PutUint16(frame[6:8], uint16(len(chunk)))
+		binary.BigEndian.PutUint16(frame[6:8], uint16(uint32(len(chunk)))) //nolint:gosec
 		binary.BigEndian.PutUint32(frame[8:12], seq)
 		copy(frame[12:], chunk)
 

@@ -1,16 +1,18 @@
+// Package crypto provides cryptographic functions.
 package crypto
 
 import (
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
 var (
-	ErrInvalidKeySize     = fmt.Errorf("invalid key size")
-	ErrCiphertextTooShort = fmt.Errorf("ciphertext too short")
+	ErrInvalidKeySize     = errors.New("invalid key size")     //nolint:revive
+	ErrCiphertextTooShort = errors.New("ciphertext too short") //nolint:revive
 )
 
 type Cipher struct { //nolint:revive

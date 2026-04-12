@@ -1,3 +1,4 @@
+// Package server provides the core server logic for olcrtc.
 package server
 
 import (
@@ -5,10 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,10 +25,13 @@ import (
 )
 
 var (
-	ErrKeySize             = fmt.Errorf("key must be 32 bytes")
-	ErrKeyStringLength     = fmt.Errorf("key string length must be 32")
-	ErrSocks5AuthFailed    = fmt.Errorf("SOCKS5 auth failed")
-	ErrSocks5ConnectFailed = fmt.Errorf("SOCKS5 connect failed")
+	ErrKeySize             = errors.New("key must be 32 bytes")             //nolint:revive
+	ErrKeyStringLength     = errors.New("key string length must be 32")     //nolint:revive
+	ErrSocks5AuthFailed    = errors.New("SOCKS5 auth failed")                //nolint:revive
+	ErrSocks5ConnectFailed = errors.New("SOCKS5 connect failed")             //nolint:revive
+	ErrNoPeers             = errors.New("no peers available")               //nolint:revive
+	ErrDialProxy           = errors.New("failed to dial proxy")             //nolint:revive
+	ErrEncryptFailed       = errors.New("encrypt failed")                   //nolint:revive
 )
 
 type Server struct { //nolint:revive
@@ -51,7 +57,12 @@ type ConnectRequest struct { //nolint:revive
 	Port int    `json:"port"`
 }
 
-func Run(ctx context.Context, roomURL, keyHex string, dnsServer, socksProxyAddr string, socksProxyPort int) error { //nolint:revive
+func Run(
+	ctx context.Context,
+	roomURL, keyHex string,
+	dnsServer, socksProxyAddr string,
+	socksProxyPort int,
+) error { //nolint:revive
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -153,12 +164,12 @@ func (s *Server) setupMux() {
 
 		encrypted, err := s.cipher.Encrypt(frame)
 		if err != nil {
-			return fmt.Errorf("encrypt failed: %w", err)
+			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
 		if len(s.peers) == 0 {
-			return fmt.Errorf("no peers available")
+			return ErrNoPeers
 		}
-		idx := s.peerIdx.Add(1) % uint32(len(s.peers))
+		idx := s.peerIdx.Add(1) % uint32(len(s.peers)) //nolint:gosec
 		return s.peers[idx].Send(encrypted)
 	})
 }
@@ -217,12 +228,12 @@ func (s *Server) handlePeerReconnect(peerID int, dc *webrtc.DataChannel) {
 		s.mux.UpdateSendFunc(func(frame []byte) error {
 			encrypted, err := s.cipher.Encrypt(frame)
 			if err != nil {
-				return fmt.Errorf("encrypt failed: %w", err)
+				return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 			}
 			if len(s.peers) == 0 {
-				return fmt.Errorf("no peers available")
+				return ErrNoPeers
 			}
-			idx := s.peerIdx.Add(1) % uint32(len(s.peers))
+			idx := s.peerIdx.Add(1) % uint32(len(s.peers)) //nolint:gosec
 			return s.peers[idx].Send(encrypted)
 		})
 	}
@@ -253,7 +264,7 @@ func (s *Server) socks5Connect(conn net.Conn, targetAddr string, targetPort int)
 	req := make([]byte, 0, 7+addrLen)
 	req = append(req, 5, 1, 0, 3, byte(addrLen))
 	req = append(req, []byte(targetAddr)...)
-	req = append(req, byte(targetPort>>8), byte(targetPort))
+	req = append(req, byte(targetPort>>8), byte(targetPort)) //nolint:gosec
 
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("failed to write socks5 connect req: %w", err)
@@ -406,7 +417,7 @@ func (s *Server) unmarkStreamPump(sid uint16, conn net.Conn) {
 
 func (s *Server) handleConnect(ctx context.Context, sid uint16, req ConnectRequest) {
 	startTime := time.Now()
-	addr := net.JoinHostPort(req.Addr, fmt.Sprintf("%d", req.Port))
+	addr := net.JoinHostPort(req.Addr, strconv.Itoa(req.Port))
 	log.Printf("[SERVER] sid=%d CONNECT_START %s", sid, addr)
 
 	s.closeStreamConnection(sid)
@@ -436,24 +447,28 @@ func (s *Server) handleConnect(ctx context.Context, sid uint16, req ConnectReque
 }
 
 func (s *Server) dial(req ConnectRequest) (net.Conn, error) {
-	addr := net.JoinHostPort(req.Addr, fmt.Sprintf("%d", req.Port))
+	addr := net.JoinHostPort(req.Addr, strconv.Itoa(req.Port))
 	if s.socksProxyAddr == "" {
 		dialer := &net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
 			Resolver:  s.resolver,
 		}
-		return dialer.Dial("tcp4", addr)
+		conn, err := dialer.Dial("tcp4", addr)
+		if err != nil {
+			return nil, fmt.Errorf("dial failed: %w", err)
+		}
+		return conn, nil
 	}
 
-	proxyAddr := net.JoinHostPort(s.socksProxyAddr, fmt.Sprintf("%d", s.socksProxyPort))
+	proxyAddr := net.JoinHostPort(s.socksProxyAddr, strconv.Itoa(s.socksProxyPort))
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
 	conn, err := dialer.Dial("tcp4", proxyAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial proxy: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrDialProxy, err)
 	}
 
 	if err := s.socks5Connect(conn, req.Addr, req.Port); err != nil {
@@ -493,7 +508,7 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 			return
 		}
 
-		totalSent += uint64(n)
+		totalSent += uint64(n) //nolint:gosec
 		if time.Since(lastLog) > 5*time.Second {
 			log.Printf("[SERVER] sid=%d TRANSFER_UP sent=%d MB", sid, totalSent/(1024*1024))
 			lastLog = time.Now()

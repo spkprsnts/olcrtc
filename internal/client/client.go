@@ -44,7 +44,7 @@ type Client struct {
 const defaultSOCKSListenHost = "127.0.0.1"
 
 // Run starts the client and listens for SOCKS5 traffic.
-func Run( //nolint:revive
+func Run(
 	ctx context.Context,
 	roomURL,
 	keyHex string,
@@ -57,7 +57,7 @@ func Run( //nolint:revive
 }
 
 // RunWithReady starts the client and invokes onReady once the local SOCKS5 listener is accepting connections.
-func RunWithReady( //nolint:revive
+func RunWithReady(
 	ctx context.Context,
 	roomURL,
 	keyHex string,

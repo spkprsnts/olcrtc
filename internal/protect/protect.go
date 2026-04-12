@@ -1,3 +1,4 @@
+// Package protect provides functions to protect sockets from VPN routing.
 package protect
 
 import (
@@ -19,7 +20,7 @@ func controlFunc(network, _ string, c syscall.RawConn) error {
 	}
 	var err error
 	controlErr := c.Control(func(fd uintptr) {
-		if !Protector(int(fd)) {
+		if !Protector(int(fd)) { //nolint:gosec
 			err = &net.OpError{Op: "protect", Net: network, Err: net.ErrClosed}
 		}
 	})
@@ -73,6 +74,6 @@ func (d *proxyDialer) Dial(network, addr string) (net.Conn, error) {
 }
 
 // NewProxyDialer returns a proxy.Dialer that protects ICE sockets.
-func NewProxyDialer() *proxyDialer { //nolint:revive
+func NewProxyDialer() *proxyDialer {
 	return &proxyDialer{}
 }

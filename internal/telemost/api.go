@@ -3,6 +3,7 @@ package telemost //nolint:revive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 
 const apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
 
-var ErrAPI = fmt.Errorf("api error") //nolint:revive
+var ErrAPI = errors.New("api error") //nolint:revive
 
 type ConnectionInfo struct { //nolint:revive
 	RoomID       string `json:"room_id"`             //nolint:tagliatelle
