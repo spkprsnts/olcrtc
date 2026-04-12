@@ -23,7 +23,7 @@ import (
 
 const (
 	realDataChannelMessageLimit = 8192
-	defaultSendDelayMin         = 2 * time.Millisecond
+	defaultSendDelayLow         = 2 * time.Millisecond
 	defaultSendDelayMax         = 12 * time.Millisecond
 	defaultTelemetryInterval    = 20 * time.Second
 )
@@ -126,7 +126,7 @@ func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*P
 		ackWaiters:     make(map[string]chan struct{}),
 		trafficShape: TrafficShape{
 			MaxMessageSize: realDataChannelMessageLimit,
-			MinDelay:       defaultSendDelayMin,
+			MinDelay:       defaultSendDelayLow,
 			MaxDelay:       defaultSendDelayMax,
 		},
 	}, nil
