@@ -29,10 +29,13 @@ const (
 )
 
 var (
+	// ErrDataChannelTimeout is returned when the datachannel fails to open within the timeout.
 	ErrDataChannelTimeout  = errors.New("datachannel timeout")
 	ErrDataChannelNotReady = errors.New("datachannel not ready")
 	ErrSendQueueClosed     = errors.New("send queue closed")
 	ErrSendQueueTimeout    = errors.New("send queue timeout")
+	ErrSessionClosed       = errors.New("session closed")
+	ErrPeerClosed          = errors.New("peer closed")
 )
 
 type TrafficShape struct { //nolint:revive
@@ -59,7 +62,6 @@ type Peer struct { //nolint:revive
 	telemetryCh     chan struct{}
 	lastReconnect   time.Time
 	reconnectCount  int
-	reconnectMu     sync.Mutex
 	sessionMu       sync.Mutex
 	sendQueue       chan []byte
 	sendQueueClosed atomic.Bool
@@ -178,7 +180,7 @@ func (p *Peer) drainReconnectQueue() {
 	}
 }
 
-func (p *Peer) Connect(ctx context.Context) error { //nolint:revive,gocognit
+func (p *Peer) Connect(ctx context.Context) error { //nolint:revive
 	p.closed.Store(false)
 
 	config := webrtc.Configuration{
@@ -205,7 +207,7 @@ func (p *Peer) Connect(ctx context.Context) error { //nolint:revive,gocognit
 	}
 
 	p.setupICEHandlers()
-	p.startBackgroundGoroutines(keepAliveCh)
+	p.startBackgroundGoroutines(ctx, keepAliveCh)
 
 	select {
 	case <-dcReady:
@@ -319,7 +321,7 @@ func (p *Peer) dialWebSocket() error {
 	return nil
 }
 
-func (p *Peer) startBackgroundGoroutines(keepAliveCh chan struct{}) {
+func (p *Peer) startBackgroundGoroutines(ctx context.Context, keepAliveCh chan struct{}) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -331,7 +333,7 @@ func (p *Peer) startBackgroundGoroutines(keepAliveCh chan struct{}) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.handleSignaling(context.Background())
+		p.handleSignaling(ctx)
 	}()
 }
 
@@ -402,7 +404,7 @@ func (p *Peer) sendHello() error {
 	return nil
 }
 
-func (p *Peer) handleSignaling(ctx context.Context) { //nolint:gocognit
+func (p *Peer) handleSignaling(ctx context.Context) { //nolint:cyclop
 	pubSent := false
 
 	for {
@@ -837,7 +839,7 @@ func (p *Peer) sendLeave(uid string) bool {
 	return true
 }
 
-func (p *Peer) Close() error { //nolint:revive,cyclop
+func (p *Peer) Close() error { //nolint:revive
 	log.Println("Closing peer...")
 	alreadyClosing := p.closed.Swap(true)
 	p.sendQueueClosed.Store(true)
@@ -993,7 +995,7 @@ func (p *Peer) SetShouldReconnect(fn func() bool) { //nolint:revive
 	p.shouldReconnect = fn
 }
 
-func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,gocognit
+func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,gocognit,cyclop
 	const maxReconnects = 10
 	const reconnectWindow = 5 * time.Minute
 
@@ -1039,7 +1041,7 @@ func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,gocognit
 	}
 }
 
-func (p *Peer) processSendQueue(workerID int, sessionCloseCh <-chan struct{}) { //nolint:revive,gocognit
+func (p *Peer) processSendQueue(workerID int, sessionCloseCh <-chan struct{}) { //nolint:gocognit
 	for {
 		select {
 		case <-sessionCloseCh:
@@ -1079,9 +1081,9 @@ func (p *Peer) waitBufferedAmount(workerID int, sessionCloseCh <-chan struct{}) 
 	for p.dc.BufferedAmount() > 512*1024 {
 		select {
 		case <-sessionCloseCh:
-			return 0, fmt.Errorf("session closed")
+			return 0, ErrSessionClosed
 		case <-p.closeCh:
-			return 0, fmt.Errorf("peer closed")
+			return 0, ErrPeerClosed
 		case <-time.After(10 * time.Millisecond):
 			if time.Since(start) > 5*time.Second {
 				log.Printf("[WORKER-%d] Buffer wait timeout", workerID)

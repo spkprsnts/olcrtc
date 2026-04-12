@@ -25,13 +25,13 @@ import (
 )
 
 var (
-	ErrKeySize             = errors.New("key must be 32 bytes")             //nolint:revive
-	ErrKeyStringLength     = errors.New("key string length must be 32")     //nolint:revive
-	ErrSocks5AuthFailed    = errors.New("SOCKS5 auth failed")                //nolint:revive
-	ErrSocks5ConnectFailed = errors.New("SOCKS5 connect failed")             //nolint:revive
-	ErrNoPeers             = errors.New("no peers available")               //nolint:revive
-	ErrDialProxy           = errors.New("failed to dial proxy")             //nolint:revive
-	ErrEncryptFailed       = errors.New("encrypt failed")                   //nolint:revive
+	ErrKeySize             = errors.New("key must be 32 bytes")
+	ErrKeyStringLength     = errors.New("key string length must be 32")
+	ErrSocks5AuthFailed    = errors.New("SOCKS5 auth failed")
+	ErrSocks5ConnectFailed = errors.New("SOCKS5 connect failed")
+	ErrNoPeers             = errors.New("no peers available")
+	ErrDialProxy           = errors.New("failed to dial proxy")
+	ErrEncryptFailed       = errors.New("encrypt failed")
 )
 
 type Server struct { //nolint:revive
@@ -66,7 +66,6 @@ func Run(
 	socksProxyAddr string,
 	socksProxyPort int,
 ) error {
-
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

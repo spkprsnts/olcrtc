@@ -65,6 +65,7 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 // ProxyDialer implements golang.org/x/net/proxy.Dialer for pion ICE.
 type ProxyDialer struct{}
 
+// Dial connects to the address on the named network using a protected socket.
 func (d *ProxyDialer) Dial(network, addr string) (net.Conn, error) {
 	conn, err := NewDialer().Dial(network, addr)
 	if err != nil {
