@@ -62,10 +62,10 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 	return conn, nil
 }
 
-// proxyDialer implements golang.org/x/net/proxy.Dialer for pion ICE.
-type proxyDialer struct{}
+// ProxyDialer implements golang.org/x/net/proxy.Dialer for pion ICE.
+type ProxyDialer struct{}
 
-func (d *proxyDialer) Dial(network, addr string) (net.Conn, error) {
+func (d *ProxyDialer) Dial(network, addr string) (net.Conn, error) {
 	conn, err := NewDialer().Dial(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed: %w", err)
@@ -74,6 +74,7 @@ func (d *proxyDialer) Dial(network, addr string) (net.Conn, error) {
 }
 
 // NewProxyDialer returns a proxy.Dialer that protects ICE sockets.
-func NewProxyDialer() *proxyDialer {
-	return &proxyDialer{}
+func NewProxyDialer() *ProxyDialer {
+	return &ProxyDialer{}
 }
+

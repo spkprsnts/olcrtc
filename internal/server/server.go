@@ -57,12 +57,16 @@ type ConnectRequest struct { //nolint:revive
 	Port int    `json:"port"`
 }
 
+// Run starts the olcrtc server and listens for client connections.
 func Run(
 	ctx context.Context,
-	roomURL, keyHex string,
-	dnsServer, socksProxyAddr string,
+	roomURL,
+	keyHex string,
+	dnsServer,
+	socksProxyAddr string,
 	socksProxyPort int,
-) error { //nolint:revive
+) error {
+
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
