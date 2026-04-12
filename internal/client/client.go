@@ -189,7 +189,7 @@ func (c *Client) addPeer(
 	peerID int,
 	cancel context.CancelFunc,
 ) error {
-	peer, err := telemost.NewPeer(roomURL, names.Generate(), c.onData)
+	peer, err := telemost.NewPeer(runCtx, roomURL, names.Generate(), c.onData)
 	if err != nil {
 		return fmt.Errorf("create peer %d: %w", peerID, err)
 	}

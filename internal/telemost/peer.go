@@ -98,8 +98,8 @@ func (p *Peer) SetTrafficShape(shape TrafficShape) {
 	p.trafficShape = shape
 }
 
-func NewPeer(roomURL, name string, onData func([]byte)) (*Peer, error) {
-	conn, err := GetConnectionInfo(context.Background(), roomURL, name)
+func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*Peer, error) {
+	conn, err := GetConnectionInfo(ctx, roomURL, name)
 	if err != nil {
 		return nil, err
 	}

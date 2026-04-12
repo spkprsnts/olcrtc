@@ -164,7 +164,7 @@ func (s *Server) setupMux() {
 }
 
 func (s *Server) addPeer(ctx context.Context, roomURL string, peerID int, cancel context.CancelFunc) error {
-	peer, err := telemost.NewPeer(roomURL, names.Generate(), s.onData)
+	peer, err := telemost.NewPeer(ctx, roomURL, names.Generate(), s.onData)
 	if err != nil {
 		return fmt.Errorf("failed to create peer: %w", err)
 	}
