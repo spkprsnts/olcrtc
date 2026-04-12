@@ -222,7 +222,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 		log.Println("DataChannel opened")
 
 		numWorkers := 4
-		for i := 0; i < numWorkers; i++ {
+		for i := range numWorkers {
 			p.wg.Add(1)
 			go func(workerID int) {
 				defer p.wg.Done()
@@ -533,9 +533,9 @@ func (p *Peer) handleICE(cand map[string]interface{}) {
 	}
 
 	if target == "SUBSCRIBER" {
-		p.pcSub.AddICECandidate(init)
+		_ = p.pcSub.AddICECandidate(init)
 	} else if target == "PUBLISHER" {
-		p.pcPub.AddICECandidate(init)
+		_ = p.pcPub.AddICECandidate(init)
 	}
 }
 
@@ -870,24 +870,24 @@ func (p *Peer) Close() error {
 
 	if p.dc != nil {
 		log.Println("Closing DataChannel...")
-		p.dc.Close()
+		_ = p.dc.Close()
 	}
 
 	if p.pcPub != nil {
 		log.Println("Closing Publisher PeerConnection...")
-		p.pcPub.Close()
+		_ = p.pcPub.Close()
 	}
 
 	if p.pcSub != nil {
 		log.Println("Closing Subscriber PeerConnection...")
-		p.pcSub.Close()
+		_ = p.pcSub.Close()
 	}
 
 	if p.ws != nil {
 		log.Println("Closing WebSocket...")
 		p.wsMu.Lock()
-		p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-		p.ws.Close()
+		_ = p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		_ = p.ws.Close()
 		p.wsMu.Unlock()
 	}
 
@@ -948,21 +948,21 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	p.stopSession()
 
 	if p.dc != nil {
-		p.dc.Close()
+		_ = p.dc.Close()
 	}
 
 	if p.pcPub != nil {
-		p.pcPub.Close()
+		_ = p.pcPub.Close()
 	}
 
 	if p.pcSub != nil {
-		p.pcSub.Close()
+		_ = p.pcSub.Close()
 	}
 
 	if p.ws != nil {
 		p.wsMu.Lock()
-		p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-		p.ws.Close()
+		_ = p.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+		_ = p.ws.Close()
 		p.wsMu.Unlock()
 	}
 
