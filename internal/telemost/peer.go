@@ -28,7 +28,7 @@ const (
 	defaultTelemetryInterval    = 20 * time.Second
 )
 
-var (
+var ( //nolint:revive
 	// ErrDataChannelTimeout is returned when the datachannel fails to open within the timeout.
 	ErrDataChannelTimeout  = errors.New("datachannel timeout")
 // ErrDataChannelNotReady is returned when the datachannel is not open.

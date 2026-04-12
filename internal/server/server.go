@@ -24,7 +24,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-var (
+var ( //nolint:revive
 	// ErrKeySize is returned when the encryption key is not 32 bytes.
 	ErrKeySize             = errors.New("key must be 32 bytes")
 	ErrKeyStringLength     = errors.New("key string length must be 32")
