@@ -1,4 +1,3 @@
-// Package telemost provides the client for the Yandex Telemost API.
 package telemost
 
 import (
@@ -30,10 +29,10 @@ const (
 )
 
 var (
-	ErrDataChannelTimeout  = errors.New("datachannel timeout")  //nolint:revive
-	ErrDataChannelNotReady = errors.New("datachannel not ready") //nolint:revive
-	ErrSendQueueClosed     = errors.New("send queue closed")     //nolint:revive
-	ErrSendQueueTimeout    = errors.New("send queue timeout")    //nolint:revive
+	ErrDataChannelTimeout  = errors.New("datachannel timeout")
+	ErrDataChannelNotReady = errors.New("datachannel not ready")
+	ErrSendQueueClosed     = errors.New("send queue closed")
+	ErrSendQueueTimeout    = errors.New("send queue timeout")
 )
 
 type TrafficShape struct { //nolint:revive
@@ -103,7 +102,7 @@ func (p *Peer) SetTrafficShape(shape TrafficShape) { //nolint:revive
 func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*Peer, error) { //nolint:revive
 	conn, err := GetConnectionInfo(ctx, roomURL, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get connection info: %w", err)
 	}
 
 	return &Peer{
@@ -179,16 +178,46 @@ func (p *Peer) drainReconnectQueue() {
 	}
 }
 
-func (p *Peer) Connect(ctx context.Context) error {
+func (p *Peer) Connect(ctx context.Context) error { //nolint:revive,gocognit
 	p.closed.Store(false)
 
 	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.rtc.yandex.net:3478"}},
-		},
+		ICEServers:   []webrtc.ICEServer{{URLs: []string{"stun:stun.rtc.yandex.net:3478"}}},
 		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
 	}
 
+	if err := p.setupPeerConnections(config); err != nil {
+		return err
+	}
+
+	var err error
+	p.dc, err = p.pcPub.CreateDataChannel("olcrtc", nil)
+	if err != nil {
+		return fmt.Errorf("create dc: %w", err)
+	}
+
+	dcReady := make(chan struct{})
+	keepAliveCh, sessionCloseCh := p.resetSession()
+	p.setupDataChannelHandlers(dcReady, sessionCloseCh)
+
+	if err := p.dialWebSocket(); err != nil {
+		return err
+	}
+
+	p.setupICEHandlers()
+	p.startBackgroundGoroutines(keepAliveCh)
+
+	select {
+	case <-dcReady:
+		return nil
+	case <-time.After(15 * time.Second):
+		return ErrDataChannelTimeout
+	case <-ctx.Done():
+		return fmt.Errorf("connect context cancelled: %w", ctx.Err())
+	}
+}
+
+func (p *Peer) setupPeerConnections(config webrtc.Configuration) error {
 	settingEngine := webrtc.SettingEngine{}
 	if protect.Protector != nil {
 		settingEngine.SetICEProxyDialer(protect.NewProxyDialer())
@@ -198,38 +227,30 @@ func (p *Peer) Connect(ctx context.Context) error {
 	var err error
 	p.pcSub, err = api.NewPeerConnection(config)
 	if err != nil {
-		return fmt.Errorf("failed to create sub pc: %w", err)
+		return fmt.Errorf("new sub pc: %w", err)
 	}
-
-	p.pcSub.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Printf("Subscriber PeerConnection state: %s", state.String())
-		if !p.closed.Load() && (state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected) {
-			p.queueReconnect()
-		}
-	})
+	p.pcSub.OnConnectionStateChange(p.onConnectionStateChange)
 
 	p.pcPub, err = api.NewPeerConnection(config)
 	if err != nil {
-		return fmt.Errorf("failed to create pub pc: %w", err)
+		return fmt.Errorf("new pub pc: %w", err)
 	}
+	p.pcPub.OnConnectionStateChange(p.onConnectionStateChange)
 
-	p.pcPub.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Printf("Publisher PeerConnection state: %s", state.String())
-		if !p.closed.Load() && (state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected) {
-			p.queueReconnect()
-		}
-	})
+	return nil
+}
 
-	p.dc, err = p.pcPub.CreateDataChannel("olcrtc", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create dc: %w", err)
+func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
+	log.Printf("PeerConnection state: %s", state.String())
+	if !p.closed.Load() && (state == webrtc.PeerConnectionStateFailed ||
+		state == webrtc.PeerConnectionStateDisconnected) {
+		p.queueReconnect()
 	}
+}
 
-	dcReady := make(chan struct{})
-	keepAliveCh, sessionCloseCh := p.resetSession()
+func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}, sessionCloseCh chan struct{}) {
 	p.dc.OnOpen(func() {
 		log.Println("DataChannel opened")
-
 		numWorkers := 4
 		for i := range numWorkers {
 			p.wg.Add(1)
@@ -238,55 +259,52 @@ func (p *Peer) Connect(ctx context.Context) error {
 				p.processSendQueue(workerID, sessionCloseCh)
 			}(i)
 		}
-
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
 			p.monitorQueue(sessionCloseCh)
 		}()
-
 		close(dcReady)
 	})
 
-	p.dc.OnClose(func() {
-		log.Println("DataChannel closed")
-		if p.onReconnect != nil {
-			log.Println("Calling reconnect callback for cleanup")
-			p.onReconnect(nil)
-		}
-		if !p.closed.Load() {
-			p.queueReconnect()
-		}
-	})
-
-	p.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if p.onData != nil && len(msg.Data) > 0 {
-			p.onData(msg.Data)
-		}
-	})
+	p.dc.OnClose(p.onDataChannelClose)
+	p.dc.OnMessage(p.onDataChannelMessage)
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
 		log.Printf("Received datachannel: %s", dc.Label())
 		dc.OnClose(func() {
-			log.Println("Received DataChannel closed - triggering reconnect")
 			if !p.closed.Load() {
 				p.queueReconnect()
 			}
 		})
-		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if p.onData != nil && len(msg.Data) > 0 {
-				p.onData(msg.Data)
-			}
-		})
+		dc.OnMessage(p.onDataChannelMessage)
 	})
+}
 
+func (p *Peer) onDataChannelClose() {
+	log.Println("DataChannel closed")
+	if p.onReconnect != nil {
+		p.onReconnect(nil)
+	}
+	if !p.closed.Load() {
+		p.queueReconnect()
+	}
+}
+
+func (p *Peer) onDataChannelMessage(msg webrtc.DataChannelMessage) {
+	if p.onData != nil && len(msg.Data) > 0 {
+		p.onData(msg.Data)
+	}
+}
+
+func (p *Peer) dialWebSocket() error {
 	wsDialer := websocket.Dialer{
 		NetDialContext:   protect.DialContext,
 		HandshakeTimeout: 15 * time.Second,
 	}
 	ws, resp, err := wsDialer.Dial(p.conn.ClientConfig.MediaServerURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to dial websocket: %w", err)
+		return fmt.Errorf("dial ws: %w", err)
 	}
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -297,35 +315,24 @@ func (p *Peer) Connect(ctx context.Context) error {
 		_ = ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
-
 	_ = ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	return nil
+}
 
+func (p *Peer) startBackgroundGoroutines(keepAliveCh chan struct{}) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
 		p.keepAlive(keepAliveCh)
 	}()
 
-	if err := p.sendHello(); err != nil {
-		return err
-	}
-
-	p.setupICEHandlers()
+	_ = p.sendHello()
 
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.handleSignaling(ctx)
+		p.handleSignaling(context.Background())
 	}()
-
-	select {
-	case <-dcReady:
-		return nil
-	case <-time.After(15 * time.Second):
-		return ErrDataChannelTimeout
-	case <-ctx.Done():
-		return fmt.Errorf("connect context cancelled: %w", ctx.Err())
-	}
 }
 
 func (p *Peer) Send(data []byte) error { //nolint:revive
@@ -342,7 +349,7 @@ func (p *Peer) Send(data []byte) error { //nolint:revive
 		return nil
 	case <-time.After(50 * time.Millisecond):
 		queueLen := len(p.sendQueue)
-		log.Printf("[SEND_QUEUE] Timeout! queue_len=%d, dropping packet size=%d", queueLen, len(data))
+		log.Printf("[SEND_QUEUE] Timeout! len=%d size=%d", queueLen, len(data))
 		return ErrSendQueueTimeout
 	}
 }
@@ -390,12 +397,12 @@ func (p *Peer) sendHello() error {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
 	if err := p.ws.WriteJSON(hello); err != nil {
-		return fmt.Errorf("failed to send hello: %w", err)
+		return fmt.Errorf("write hello: %w", err)
 	}
 	return nil
 }
 
-func (p *Peer) handleSignaling(ctx context.Context) {
+func (p *Peer) handleSignaling(ctx context.Context) { //nolint:gocognit
 	pubSent := false
 
 	for {
@@ -408,14 +415,9 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 			return
 		}
 
-		p.wsMu.Lock()
-		if p.ws != nil {
-			_ = p.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
-		}
-		p.wsMu.Unlock()
+		p.updateWSDeadline()
 
 		uid, _ := msg["uid"].(string)
-
 		if _, ok := msg["ack"]; ok {
 			p.resolveAck(uid)
 		}
@@ -425,106 +427,117 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 			p.sendAck(uid)
 		}
 
-		if _, ok := msg["updateDescription"]; ok {
-			p.sendAck(uid)
-		}
-
-		if _, ok := msg["vadActivity"]; ok {
-			p.sendAck(uid)
-		}
+		p.handleCommonMessages(msg, uid)
 
 		if isConferenceEndMessage(msg) {
 			p.signalEnded("conference ended")
 			return
 		}
 
-		if _, ok := msg["ping"]; ok {
-			p.sendPong(uid)
-			continue
-		}
-
-		if _, ok := msg["pong"]; ok {
-			p.sendAck(uid)
-			continue
-		}
-
 		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok && !pubSent {
-			sdp, _ := offer["sdp"].(string)
-			pcSeq, _ := offer["pcSeq"].(float64)
-
-			if err := p.pcSub.SetRemoteDescription(webrtc.SessionDescription{
-				Type: webrtc.SDPTypeOffer,
-				SDP:  sdp,
-			}); err != nil {
-				log.Printf("SetRemoteDescription error: %v", err)
+			if err := p.handleSdpOffer(offer, uid); err != nil {
+				log.Printf("SDP offer error: %v", err)
 				continue
 			}
-
-			answer, err := p.pcSub.CreateAnswer(nil)
-			if err != nil {
-				log.Printf("CreateAnswer error: %v", err)
-				continue
-			}
-
-			if err := p.pcSub.SetLocalDescription(answer); err != nil {
-				log.Printf("SetLocalDescription error: %v", err)
-				continue
-			}
-
-			p.wsMu.Lock()
-			_ = p.ws.WriteJSON(map[string]interface{}{
-				"uid": uuid.New().String(),
-				"subscriberSdpAnswer": map[string]interface{}{
-					"pcSeq": int(pcSeq),
-					"sdp":   answer.SDP,
-				},
-			})
-			p.wsMu.Unlock()
-
-			p.sendAck(uid)
-			time.Sleep(300 * time.Millisecond)
-
-			pubOffer, err := p.pcPub.CreateOffer(nil)
-			if err != nil {
-				log.Printf("CreateOffer error: %v", err)
-				continue
-			}
-
-			if err := p.pcPub.SetLocalDescription(pubOffer); err != nil {
-				log.Printf("SetLocalDescription error: %v", err)
-				continue
-			}
-
-			p.wsMu.Lock()
-			_ = p.ws.WriteJSON(map[string]interface{}{
-				"uid": uuid.New().String(),
-				"publisherSdpOffer": map[string]interface{}{
-					"pcSeq": 1,
-					"sdp":   pubOffer.SDP,
-				},
-			})
-			p.wsMu.Unlock()
-
 			pubSent = true
 		}
 
 		if answer, ok := msg["publisherSdpAnswer"].(map[string]interface{}); ok {
-			sdp, _ := answer["sdp"].(string)
-
-			if err := p.pcPub.SetRemoteDescription(webrtc.SessionDescription{
-				Type: webrtc.SDPTypeAnswer,
-				SDP:  sdp,
-			}); err != nil {
-				log.Printf("SetRemoteDescription error: %v", err)
-			}
-
-			p.sendAck(uid)
+			p.handleSdpAnswer(answer, uid)
 		}
 
 		if cand, ok := msg["webrtcIceCandidate"].(map[string]interface{}); ok {
 			p.handleICE(cand)
 		}
 	}
+}
+
+func (p *Peer) updateWSDeadline() {
+	p.wsMu.Lock()
+	if p.ws != nil {
+		_ = p.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	}
+	p.wsMu.Unlock()
+}
+
+func (p *Peer) handleCommonMessages(msg map[string]interface{}, uid string) {
+	if _, ok := msg["updateDescription"]; ok {
+		p.sendAck(uid)
+	}
+	if _, ok := msg["vadActivity"]; ok {
+		p.sendAck(uid)
+	}
+	if _, ok := msg["ping"]; ok {
+		p.sendPong(uid)
+	}
+	if _, ok := msg["pong"]; ok {
+		p.sendAck(uid)
+	}
+}
+
+func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string) error {
+	sdp, _ := offer["sdp"].(string)
+	pcSeq, _ := offer["pcSeq"].(float64)
+
+	if err := p.pcSub.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeOffer,
+		SDP:  sdp,
+	}); err != nil {
+		return fmt.Errorf("set remote desc: %w", err)
+	}
+
+	answer, err := p.pcSub.CreateAnswer(nil)
+	if err != nil {
+		return fmt.Errorf("create answer: %w", err)
+	}
+
+	if err := p.pcSub.SetLocalDescription(answer); err != nil {
+		return fmt.Errorf("set local desc: %w", err)
+	}
+
+	p.wsMu.Lock()
+	_ = p.ws.WriteJSON(map[string]interface{}{
+		"uid": uuid.New().String(),
+		"subscriberSdpAnswer": map[string]interface{}{
+			"pcSeq": int(pcSeq),
+			"sdp":   answer.SDP,
+		},
+	})
+	p.wsMu.Unlock()
+
+	p.sendAck(uid)
+	time.Sleep(300 * time.Millisecond)
+
+	pubOffer, err := p.pcPub.CreateOffer(nil)
+	if err != nil {
+		return fmt.Errorf("create pub offer: %w", err)
+	}
+
+	if err := p.pcPub.SetLocalDescription(pubOffer); err != nil {
+		return fmt.Errorf("set local pub desc: %w", err)
+	}
+
+	p.wsMu.Lock()
+	_ = p.ws.WriteJSON(map[string]interface{}{
+		"uid": uuid.New().String(),
+		"publisherSdpOffer": map[string]interface{}{
+			"pcSeq": 1,
+			"sdp":   pubOffer.SDP,
+		},
+	})
+	p.wsMu.Unlock()
+	return nil
+}
+
+func (p *Peer) handleSdpAnswer(answer map[string]interface{}, uid string) {
+	sdp, _ := answer["sdp"].(string)
+	if err := p.pcPub.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDTypeAnswer,
+		SDP:  sdp,
+	}); err != nil {
+		log.Printf("SetRemoteDescription error: %v", err)
+	}
+	p.sendAck(uid)
 }
 
 func (p *Peer) handleICE(cand map[string]interface{}) {
@@ -544,9 +557,10 @@ func (p *Peer) handleICE(cand map[string]interface{}) {
 		SDPMLineIndex: func() *uint16 { v := uint16(sdpMLineIndex); return &v }(),
 	}
 
-	if target == "SUBSCRIBER" {
+	switch target {
+	case "SUBSCRIBER":
 		_ = p.pcSub.AddICECandidate(init)
-	} else if target == "PUBLISHER" {
+	case "PUBLISHER":
 		_ = p.pcPub.AddICECandidate(init)
 	}
 }
@@ -562,9 +576,7 @@ func (p *Peer) sendAck(uid string) {
 	_ = p.ws.WriteJSON(map[string]interface{}{
 		"uid": uid,
 		"ack": map[string]interface{}{
-			"status": map[string]interface{}{
-				"code": "OK",
-			},
+			"status": map[string]interface{}{"code": "OK"},
 		},
 	})
 }
@@ -588,9 +600,7 @@ func (p *Peer) waitForAck(uid string, ch <-chan struct{}, timeout time.Duration)
 		return false
 	}
 
-	defer func() {
-		p.removeAckWaiter(uid)
-	}()
+	defer p.removeAckWaiter(uid)
 
 	select {
 	case <-ch:
@@ -626,7 +636,7 @@ func (p *Peer) sendPong(uid string) {
 	})
 }
 
-func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interface{}) {
+func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interface{}) { //nolint:cyclop
 	cfg, ok := serverHello["telemetryConfiguration"].(map[string]interface{})
 	if !ok {
 		return
@@ -640,7 +650,7 @@ func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interf
 		endpoint, _ = cfg["url"].(string)
 	}
 	if endpoint == "" {
-		logger.Verbosef("Telemetry configuration has no endpoint; skipping XHR simulation")
+		logger.Verbosef("Telemetry endpoint missing")
 		return
 	}
 
@@ -705,7 +715,7 @@ func (p *Peer) sendTelemetry(ctx context.Context, endpoint, event string) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		logger.Verbosef("Telemetry request skipped: %v", err)
+		logger.Verbosef("Telemetry req error: %v", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -720,13 +730,10 @@ func (p *Peer) sendTelemetry(ctx context.Context, endpoint, event string) {
 	client := protect.NewHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.Verbosef("Telemetry send failed: %v", err)
+		logger.Verbosef("Telemetry send error: %v", err)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 400 {
-		logger.Verbosef("Telemetry endpoint returned %s", resp.Status)
-	}
 }
 
 func (p *Peer) signalEnded(reason string) {
@@ -774,7 +781,6 @@ func (p *Peer) setupICEHandlers() {
 		if c == nil {
 			return
 		}
-
 		init := c.ToJSON()
 		p.wsMu.Lock()
 		_ = p.ws.WriteJSON(map[string]interface{}{
@@ -794,7 +800,6 @@ func (p *Peer) setupICEHandlers() {
 		if c == nil {
 			return
 		}
-
 		init := c.ToJSON()
 		p.wsMu.Lock()
 		_ = p.ws.WriteJSON(map[string]interface{}{
@@ -816,7 +821,6 @@ func (p *Peer) sendLeave(uid string) bool {
 	defer p.wsMu.Unlock()
 
 	if p.ws == nil {
-		log.Println("WebSocket already closed, cannot send leave")
 		return false
 	}
 
@@ -829,43 +833,28 @@ func (p *Peer) sendLeave(uid string) bool {
 		log.Printf("Failed to send leave: %v", err)
 		return false
 	}
-	log.Println("Sent leave message to server")
+	log.Println("Sent leave message")
 	return true
 }
 
-func (p *Peer) Close() error { //nolint:revive
-	log.Println("Closing peer connection...")
-
+func (p *Peer) Close() error { //nolint:revive,cyclop
+	log.Println("Closing peer...")
 	alreadyClosing := p.closed.Swap(true)
 	p.sendQueueClosed.Store(true)
 
 	if !alreadyClosing {
-		log.Println("Sending leave message...")
 		leaveUID := uuid.New().String()
 		leaveAck := p.registerAckWaiter(leaveUID)
 		if p.sendLeave(leaveUID) {
-			if p.waitForAck(leaveUID, leaveAck, 1500*time.Millisecond) {
-				log.Println("Leave acknowledged")
-			} else {
-				log.Println("Leave ack timeout")
-			}
+			_ = p.waitForAck(leaveUID, leaveAck, 1500*time.Millisecond)
 		} else {
 			p.removeAckWaiter(leaveUID)
 		}
-
 		p.stopTelemetry()
 	}
 
-	log.Println("Closing channels...")
-	if p.closeCh != nil {
-		select {
-		case <-p.closeCh:
-		default:
-			close(p.closeCh)
-		}
-	}
+	closeSignal(p.closeCh)
 
-	log.Println("Waiting for goroutines...")
 	done := make(chan struct{})
 	go func() {
 		p.wg.Wait()
@@ -874,74 +863,47 @@ func (p *Peer) Close() error { //nolint:revive
 
 	select {
 	case <-done:
-		log.Println("All goroutines finished")
 	case <-time.After(2 * time.Second):
-		log.Println("Goroutine wait timeout")
+		log.Println("Wait timeout")
 	}
 
 	if p.dc != nil {
-		log.Println("Closing DataChannel...")
 		_ = p.dc.Close()
 	}
-
 	if p.pcPub != nil {
-		log.Println("Closing Publisher PeerConnection...")
 		_ = p.pcPub.Close()
 	}
-
 	if p.pcSub != nil {
-		log.Println("Closing Subscriber PeerConnection...")
 		_ = p.pcSub.Close()
 	}
-
 	if p.ws != nil {
-		log.Println("Closing WebSocket...")
 		p.wsMu.Lock()
 		_ = p.ws.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-			time.Now().Add(time.Second)) //nolint:lll
+			time.Now().Add(time.Second))
 		_ = p.ws.Close()
 		p.wsMu.Unlock()
 	}
 
-	log.Println("Peer closed")
 	return nil
 }
 
 func (p *Peer) keepAlive(keepAliveCh <-chan struct{}) {
-	wsPingTicker := time.NewTicker(30 * time.Second)
-	defer wsPingTicker.Stop()
-
-	appPingTicker := time.NewTicker(5 * time.Second)
-	defer appPingTicker.Stop()
+	wsTicker := time.NewTicker(30 * time.Second)
+	defer wsTicker.Stop()
+	appTicker := time.NewTicker(5 * time.Second)
+	defer appTicker.Stop()
 
 	for {
 		select {
-		case <-wsPingTicker.C:
-			p.wsMu.Lock()
-			if p.ws != nil {
-				if err := p.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
-					log.Printf("WS Ping error: %v", err)
-					p.wsMu.Unlock()
-					p.queueReconnect()
-					return
-				}
+		case <-wsTicker.C:
+			if !p.sendWSPing() {
+				return
 			}
-			p.wsMu.Unlock()
-		case <-appPingTicker.C:
-			p.wsMu.Lock()
-			if p.ws != nil {
-				if err := p.ws.WriteJSON(map[string]interface{}{
-					"uid":  uuid.New().String(),
-					"ping": map[string]interface{}{},
-				}); err != nil {
-					log.Printf("App Ping error: %v", err)
-					p.wsMu.Unlock()
-					p.queueReconnect()
-					return
-				}
+		case <-appTicker.C:
+			if !p.sendAppPing() {
+				return
 			}
-			p.wsMu.Unlock()
 		case <-keepAliveCh:
 			return
 		case <-p.closeCh:
@@ -950,42 +912,65 @@ func (p *Peer) keepAlive(keepAliveCh <-chan struct{}) {
 	}
 }
 
+func (p *Peer) sendWSPing() bool {
+	p.wsMu.Lock()
+	defer p.wsMu.Unlock()
+	if p.ws != nil {
+		if err := p.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+			log.Printf("WS Ping error: %v", err)
+			p.queueReconnect()
+			return false
+		}
+	}
+	return true
+}
+
+func (p *Peer) sendAppPing() bool {
+	p.wsMu.Lock()
+	defer p.wsMu.Unlock()
+	if p.ws != nil {
+		if err := p.ws.WriteJSON(map[string]interface{}{
+			"uid":  uuid.New().String(),
+			"ping": map[string]interface{}{},
+		}); err != nil {
+			log.Printf("App Ping error: %v", err)
+			p.queueReconnect()
+			return false
+		}
+	}
+	return true
+}
+
 func (p *Peer) reconnect(ctx context.Context) error {
-	log.Println("Reconnecting...")
 	p.reconnecting.Store(true)
 	defer p.reconnecting.Store(false)
 
 	p.sendLeave(uuid.New().String())
 	time.Sleep(500 * time.Millisecond)
-
 	p.stopSession()
 
 	if p.dc != nil {
 		_ = p.dc.Close()
 	}
-
 	if p.pcPub != nil {
 		_ = p.pcPub.Close()
 	}
-
 	if p.pcSub != nil {
 		_ = p.pcSub.Close()
 	}
-
 	if p.ws != nil {
 		p.wsMu.Lock()
 		_ = p.ws.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-			time.Now().Add(time.Second)) //nolint:lll
+			time.Now().Add(time.Second))
 		_ = p.ws.Close()
 		p.wsMu.Unlock()
 	}
 
 	time.Sleep(3 * time.Second)
-
 	conn, err := GetConnectionInfo(ctx, p.roomURL, p.name)
 	if err != nil {
-		return fmt.Errorf("failed to get connection info: %w", err)
+		return fmt.Errorf("reconnect get info: %w", err)
 	}
 	p.conn = conn
 
@@ -996,9 +981,7 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	if p.onReconnect != nil {
 		p.onReconnect(p.dc)
 	}
-
 	p.drainReconnectQueue()
-
 	return nil
 }
 
@@ -1010,28 +993,28 @@ func (p *Peer) SetShouldReconnect(fn func() bool) { //nolint:revive
 	p.shouldReconnect = fn
 }
 
-func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive
+func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,gocognit
 	const maxReconnects = 10
 	const reconnectWindow = 5 * time.Minute
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
+		case <-p.closeCh:
+			return
 		case <-p.reconnectCh:
-			p.reconnectMu.Lock()
-			now := time.Now()
-			if now.Sub(p.lastReconnect) > reconnectWindow {
+			if time.Since(p.lastReconnect) > reconnectWindow {
 				p.reconnectCount = 0
 			}
+			p.reconnectCount++
+			p.lastReconnect = time.Now()
 
-			if p.reconnectCount >= maxReconnects {
-				log.Printf("Max reconnect attempts (%d) reached, stopping", maxReconnects)
-				p.reconnectMu.Unlock()
+			if p.reconnectCount > maxReconnects {
+				log.Printf("Max reconnects reached (%d)", maxReconnects)
+				p.signalEnded("reconnect limit reached")
 				return
 			}
-
-			p.reconnectCount++
-			p.lastReconnect = now
-			p.reconnectMu.Unlock()
 
 			backoff := time.Duration(p.reconnectCount) * 2 * time.Second
 			if backoff > 30*time.Second {
@@ -1040,131 +1023,109 @@ func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive
 
 			for {
 				if err := p.reconnect(ctx); err != nil {
-					log.Printf("Reconnect failed: %v, retrying in %v...", err, backoff)
-					time.Sleep(backoff)
-					continue
+					log.Printf("Reconnect failed: %v", err)
+					select {
+					case <-ctx.Done():
+						return
+					case <-p.closeCh:
+						return
+					case <-time.After(backoff):
+						continue
+					}
 				}
-				p.reconnectMu.Lock()
-				p.reconnectCount = 0
-				p.reconnectMu.Unlock()
-				log.Println("Reconnected successfully")
 				break
 			}
-		case <-p.closeCh:
-			return
-		case <-ctx.Done():
-			return
 		}
 	}
 }
 
-func (p *Peer) processSendQueue(workerID int, sessionCloseCh <-chan struct{}) {
-
+func (p *Peer) processSendQueue(workerID int, sessionCloseCh <-chan struct{}) { //nolint:revive,gocognit
 	for {
 		select {
-		case data, ok := <-p.sendQueue:
-			if !ok {
-				return
-			}
-			if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
-				continue
-			}
-			if p.trafficShape.MaxMessageSize > 0 && len(data) > p.trafficShape.MaxMessageSize {
-				log.Printf("[WORKER-%d] Refusing oversized DataChannel message size=%d limit=%d",
-					workerID, len(data), p.trafficShape.MaxMessageSize) //nolint:lll
-				continue
-			}
-			if delay := p.nextSendDelay(); delay > 0 {
-				time.Sleep(delay)
-			}
-
-			// Wait until SCTP buffer drains. Dropping here would corrupt the
-			// carried TCP streams (the mux is a reliable transport); large
-			// downloads like Instagram/Twitter assets would hang forever
-			// waiting for the missing bytes. Backpressure already propagates
-			// upstream via CanSend() / the sendQueue length.
-			// Threshold is high (4MB) because a tight limit serialises sends:
-			// workers would pause on every frame, turning throughput into
-			// one chunk per 10ms drain cycle (~400KB/s).
-			waitStart := time.Now()
-			for p.dc.BufferedAmount() > 4*1024*1024 {
-				if p.dc.ReadyState() != webrtc.DataChannelStateOpen {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			if waited := time.Since(waitStart); waited > 500*time.Millisecond {
-				logger.Verbosef("[WORKER-%d] Buffer drained after %v", workerID, waited)
-			}
-
-			if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
-				continue
-			}
-
-			sendStart := time.Now()
-			if err := p.dc.Send(data); err != nil {
-				log.Printf("[WORKER-%d] Send error: %v", workerID, err)
-			} else {
-				elapsed := time.Since(sendStart)
-				if elapsed > 50*time.Millisecond {
-					log.Printf("[WORKER-%d] Sent %d bytes in %v (buffered: %d)",
-						workerID, len(data), elapsed, p.dc.BufferedAmount())
-				} else {
-					logger.Verbosef("[WORKER-%d] Sent %d bytes (buffered: %d)",
-						workerID, len(data), p.dc.BufferedAmount())
-				}
-			}
-
 		case <-sessionCloseCh:
 			return
 		case <-p.closeCh:
 			return
+		case data := <-p.sendQueue:
+			if len(data) > p.trafficShape.MaxMessageSize {
+				log.Printf("[WORKER-%d] Refusing oversized message size=%d limit=%d",
+					workerID, len(data), p.trafficShape.MaxMessageSize)
+				continue
+			}
+
+			waited, err := p.waitBufferedAmount(workerID, sessionCloseCh)
+			if err != nil {
+				return
+			}
+			if waited > 0 {
+				logger.Verbosef("[WORKER-%d] Drained after %v", workerID, waited)
+			}
+
+			if err := p.dc.Send(data); err != nil {
+				log.Printf("[WORKER-%d] Send error: %v", workerID, err)
+				p.queueReconnect()
+				return
+			}
+
+			if p.trafficShape.MinDelay > 0 {
+				time.Sleep(p.calculateDelay())
+			}
 		}
 	}
 }
 
+func (p *Peer) waitBufferedAmount(workerID int, sessionCloseCh <-chan struct{}) (time.Duration, error) {
+	start := time.Now()
+	for p.dc.BufferedAmount() > 512*1024 {
+		select {
+		case <-sessionCloseCh:
+			return 0, fmt.Errorf("session closed")
+		case <-p.closeCh:
+			return 0, fmt.Errorf("peer closed")
+		case <-time.After(10 * time.Millisecond):
+			if time.Since(start) > 5*time.Second {
+				log.Printf("[WORKER-%d] Buffer wait timeout", workerID)
+				return time.Since(start), nil
+			}
+		}
+	}
+	return time.Since(start), nil
+}
+
+func (p *Peer) calculateDelay() time.Duration {
+	minDelay := p.trafficShape.MinDelay
+	maxDelay := p.trafficShape.MaxDelay
+	if maxDelay <= minDelay {
+		return minDelay
+	}
+	//nolint:gosec
+	return minDelay + time.Duration(rand.Int64N(int64(maxDelay-minDelay)))
+}
+
 func (p *Peer) monitorQueue(sessionCloseCh <-chan struct{}) {
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
-			queueLen := len(p.sendQueue)
-			buffered := uint64(0)
-			if p.dc != nil {
-				buffered = p.dc.BufferedAmount()
-			}
-			if queueLen > 800 || buffered > 3*1024*1024 {
-				log.Printf("[QUEUE_MONITOR] queue_len=%d dc_buffered=%d MB",
-					queueLen, buffered/(1024*1024)) //nolint:lll
-			}
 		case <-sessionCloseCh:
 			return
 		case <-p.closeCh:
 			return
+		case <-ticker.C:
+			queueLen := len(p.sendQueue)
+			buffered := p.dc.BufferedAmount()
+			if queueLen > 100 || buffered > 1024*1024 {
+				log.Printf("[MONITOR] queue=%d, buffered=%d MB",
+					queueLen, buffered/(1024*1024))
+			}
 		}
 	}
 }
 
 func (p *Peer) CanSend() bool { //nolint:revive
-	queueLen := len(p.sendQueue)
-	buffered := uint64(0)
-	if p.dc != nil {
-		buffered = p.dc.BufferedAmount()
+	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
+		return false
 	}
-	return queueLen < 1000 && buffered < 3*1024*1024
-}
-
-func (p *Peer) nextSendDelay() time.Duration {
-	minDelay := p.trafficShape.MinDelay
-	maxDelay := p.trafficShape.MaxDelay
-	if maxDelay <= 0 {
-		return 0
-	}
-	if maxDelay <= minDelay {
-		return maxDelay
-	}
-	//nolint:gosec
-	return minDelay + time.Duration(rand.Int64N(int64(maxDelay-minDelay)))
+	return len(p.sendQueue) < 4000
 }
