@@ -40,11 +40,13 @@ or wait for the release or at least a beta
 ./script/cnc.bat
 
 
-# Also there's a client UI version (currently in beta)
+# also there's a client UI version (currently in beta)
 ./script/ui.sh
 
-# And then
+# and then
 ./build/olcrtc-ui
+
+
 
 
 # or native ( no podman ) linux
