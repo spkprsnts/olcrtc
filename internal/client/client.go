@@ -44,7 +44,7 @@ type Client struct {
 const defaultSOCKSListenHost = "127.0.0.1"
 
 // Run starts the client and listens for SOCKS5 traffic.
-func Run(
+func Run( //nolint:revive
 	ctx context.Context,
 	roomURL,
 	keyHex string,
@@ -57,7 +57,7 @@ func Run(
 }
 
 // RunWithReady starts the client and invokes onReady once the local SOCKS5 listener is accepting connections.
-func RunWithReady(
+func RunWithReady( //nolint:revive
 	ctx context.Context,
 	roomURL,
 	keyHex string,
@@ -72,7 +72,7 @@ func RunWithReady(
 
 	key, err := decodeKey(keyHex)
 	if err != nil {
-		return err
+		return fmt.Errorf("decodeKey failed: %w", err)
 	}
 
 	keyStr := string(key)
@@ -95,7 +95,7 @@ func RunWithReady(
 
 	for peerID := range 1 {
 		if err := c.addPeer(runCtx, roomURL, peerID, cancel); err != nil {
-			return err
+			return fmt.Errorf("addPeer failed: %w", err)
 		}
 	}
 
@@ -109,10 +109,6 @@ func RunWithReady(
 	log.Println("Client goroutines finished")
 
 	return err
-}
-
-func peerCount() int {
-	return 1
 }
 
 func decodeKey(keyHex string) ([]byte, error) {
