@@ -1,3 +1,4 @@
+// Package jazz implements the SaluteJazz WebRTC provider.
 package jazz
 
 import (
@@ -22,6 +23,7 @@ const (
 	sendDelay                 = 2 * time.Millisecond
 )
 
+// Peer represents a SaluteJazz WebRTC connection.
 type Peer struct {
 	name            string
 	roomInfo        *RoomInfo
@@ -83,6 +85,7 @@ func NewPeer(ctx context.Context, roomID, name string, onData func([]byte)) (*Pe
 	}, nil
 }
 
+// Connect starts the WebRTC connection process.
 func (p *Peer) Connect(ctx context.Context) error {
 	p.closed.Store(false)
 
@@ -186,7 +189,10 @@ func (p *Peer) sendJoin() error {
 
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
-	return p.ws.WriteJSON(joinMsg)
+	if err := p.ws.WriteJSON(joinMsg); err != nil {
+		return fmt.Errorf("write join json: %w", err)
+	}
+	return nil
 }
 
 func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
@@ -208,21 +214,7 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 	})
 
 	p.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		logger.Verbosef("[Jazz] Received %d bytes on publisher DC (raw)", len(msg.Data))
-
-		payload, ok := DecodeDataPacket(msg.Data)
-		if !ok {
-			logger.Debugf("[Jazz] Failed to decode DataPacket, trying raw")
-			if p.onData != nil && len(msg.Data) > 0 {
-				p.onData(msg.Data)
-			}
-			return
-		}
-
-		logger.Verbosef("[Jazz] Decoded DataPacket: %d bytes payload", len(payload))
-		if p.onData != nil && len(payload) > 0 {
-			p.onData(payload)
-		}
+		p.handleIncomingMessage(msg.Data, "publisher")
 	})
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
@@ -232,26 +224,30 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 		}
 
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC (_reliable, raw)", len(msg.Data))
-
-			payload, ok := DecodeDataPacket(msg.Data)
-			if !ok {
-				logger.Debugf("[Jazz] Failed to decode DataPacket from subscriber, trying raw")
-				if p.onData != nil && len(msg.Data) > 0 {
-					p.onData(msg.Data)
-				}
-				return
-			}
-
-			logger.Verbosef("[Jazz] Decoded DataPacket from subscriber: %d bytes payload", len(payload))
-			if p.onData != nil && len(payload) > 0 {
-				p.onData(payload)
-			}
+			p.handleIncomingMessage(msg.Data, "subscriber")
 		})
 	})
 }
 
-func (p *Peer) handleSignaling(ctx context.Context) {
+func (p *Peer) handleIncomingMessage(data []byte, source string) {
+	logger.Verbosef("[Jazz] Received %d bytes on %s DC (raw)", len(data), source)
+
+	payload, ok := DecodeDataPacket(data)
+	if !ok {
+		logger.Debugf("[Jazz] Failed to decode DataPacket, trying raw")
+		if p.onData != nil && len(data) > 0 {
+			p.onData(data)
+		}
+		return
+	}
+
+	logger.Verbosef("[Jazz] Decoded DataPacket: %d bytes payload", len(payload))
+	if p.onData != nil && len(payload) > 0 {
+		p.onData(payload)
+	}
+}
+
+func (p *Peer) handleSignaling(_ context.Context) {
 	for {
 		var msg map[string]any
 		if err := p.ws.ReadJSON(&msg); err != nil {
@@ -271,7 +267,7 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 		case "join-response":
 			p.handleJoinResponse(payload)
 		case "media-out":
-			p.handleMediaOut(ctx, payload)
+			p.handleMediaOut(payload)
 		}
 	}
 }
@@ -282,7 +278,7 @@ func (p *Peer) handleJoinResponse(payload map[string]any) {
 	logger.Verbosef("Jazz peer joined: groupId=%s", p.groupID)
 }
 
-func (p *Peer) handleMediaOut(ctx context.Context, payload map[string]any) {
+func (p *Peer) handleMediaOut(payload map[string]any) {
 	method, _ := payload["method"].(string)
 
 	switch method {
@@ -291,7 +287,7 @@ func (p *Peer) handleMediaOut(ctx context.Context, payload map[string]any) {
 	case "rtc:join":
 		logger.Verbosef("Jazz rtc:join received")
 	case "rtc:offer":
-		p.handleSubscriberOffer(ctx, payload)
+		p.handleSubscriberOffer(payload)
 	case "rtc:answer":
 		p.handlePublisherAnswer(payload)
 	case "rtc:ice":
@@ -337,7 +333,7 @@ func (p *Peer) handleRTCConfig(payload map[string]any) {
 	}
 }
 
-func (p *Peer) handleSubscriberOffer(ctx context.Context, payload map[string]any) {
+func (p *Peer) handleSubscriberOffer(payload map[string]any) {
 	desc, _ := payload["description"].(map[string]any)
 	sdp, _ := desc["sdp"].(string)
 
@@ -454,6 +450,7 @@ func (p *Peer) updateWSDeadline() {
 	p.wsMu.Unlock()
 }
 
+// Send queues data for transmission.
 func (p *Peer) Send(data []byte) error {
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return provider.ErrDataChannelNotReady
@@ -497,6 +494,7 @@ func (p *Peer) processSendQueue() {
 	}
 }
 
+// Close terminates the connection and releases resources.
 func (p *Peer) Close() error {
 	p.closed.Store(true)
 	p.sendQueueClosed.Store(true)
@@ -535,18 +533,22 @@ func (p *Peer) Close() error {
 	return nil
 }
 
+// SetReconnectCallback sets the callback for reconnection events.
 func (p *Peer) SetReconnectCallback(cb func(*webrtc.DataChannel)) {
 	p.onReconnect = cb
 }
 
+// SetShouldReconnect sets the policy for reconnection.
 func (p *Peer) SetShouldReconnect(fn func() bool) {
 	p.shouldReconnect = fn
 }
 
+// SetEndedCallback sets the callback for connection termination.
 func (p *Peer) SetEndedCallback(cb func(string)) {
 	p.onEnded = cb
 }
 
+// WatchConnection monitors the connection lifecycle.
 func (p *Peer) WatchConnection(ctx context.Context) {
 	for {
 		select {
@@ -559,6 +561,7 @@ func (p *Peer) WatchConnection(ctx context.Context) {
 	}
 }
 
+// CanSend checks if data can be sent.
 func (p *Peer) CanSend() bool {
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return false
@@ -566,10 +569,12 @@ func (p *Peer) CanSend() bool {
 	return len(p.sendQueue) < 4000
 }
 
+// GetSendQueue returns the transmission queue.
 func (p *Peer) GetSendQueue() chan []byte {
 	return p.sendQueue
 }
 
+// GetBufferedAmount returns the WebRTC buffered amount.
 func (p *Peer) GetBufferedAmount() uint64 {
 	if p.dc != nil {
 		return p.dc.BufferedAmount()

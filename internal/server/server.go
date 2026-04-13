@@ -21,8 +21,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/provider"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -43,6 +41,7 @@ var (
 	ErrEncryptFailed = errors.New("encrypt failed")
 )
 
+// Server handles incoming WebRTC connections and proxies their traffic.
 type Server struct {
 	peers          []provider.Provider
 	cipher         *crypto.Cipher
@@ -60,12 +59,14 @@ type Server struct {
 	socksProxyPort int
 }
 
-type ConnectRequest struct { //nolint:revive
+// ConnectRequest is a message from the client to establish a new connection.
+type ConnectRequest struct {
 	Cmd  string `json:"cmd"`
 	Addr string `json:"addr"`
 	Port int    `json:"port"`
 }
 
+// Run starts the server with the specified parameters.
 func Run(
 	ctx context.Context,
 	providerName,

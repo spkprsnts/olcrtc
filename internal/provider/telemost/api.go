@@ -1,4 +1,4 @@
-package telemost //nolint:revive
+package telemost
 
 import (
 	"context"

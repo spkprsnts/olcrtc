@@ -1,3 +1,4 @@
+// Package jazz implements the SaluteJazz WebRTC provider.
 package jazz
 
 import (
@@ -14,6 +15,7 @@ import (
 
 const apiBase = "https://bk.salutejazz.ru"
 
+// RoomInfo contains connection details for a SaluteJazz room.
 type RoomInfo struct {
 	RoomID       string `json:"roomId"`
 	Password     string `json:"password"`
@@ -34,6 +36,29 @@ func createRoom(ctx context.Context) (*RoomInfo, error) {
 		"Content-Type":      "application/json",
 	}
 
+	createResp, err := createMeeting(ctx, headers)
+	if err != nil {
+		return nil, fmt.Errorf("create meeting: %w", err)
+	}
+
+	connectorURL, err := preconnect(ctx, createResp.RoomID, createResp.Password, headers)
+	if err != nil {
+		return nil, fmt.Errorf("preconnect: %w", err)
+	}
+
+	return &RoomInfo{
+		RoomID:       createResp.RoomID,
+		Password:     createResp.Password,
+		ConnectorURL: connectorURL,
+	}, nil
+}
+
+type createResponse struct {
+	RoomID   string `json:"roomId"`
+	Password string `json:"password"`
+}
+
+func createMeeting(ctx context.Context, headers map[string]string) (*createResponse, error) {
 	createPayload := map[string]any{
 		"title":                             "olcrtc",
 		"guestEnabled":                      true,
@@ -72,80 +97,15 @@ func createRoom(ctx context.Context) (*RoomInfo, error) {
 		return nil, fmt.Errorf("%w: status %d", errCreateRoomFailed, resp.StatusCode)
 	}
 
-	var createResp struct {
-		RoomID   string `json:"roomId"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&createResp); err != nil {
+	var res createResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decode create response: %w", err)
 	}
 
-	preconnectPayload := map[string]any{
-		"password": createResp.Password,
-		"jazzNextMigration": map[string]any{
-			"b2bBaseRoomSupport":               true,
-			"demoRoomBaseSupport":              true,
-			"demoRoomVersionSupport":           2,
-			"mediaWithoutAutoSubscribeSupport": true,
-			"webinarSpeakerSupport":            true,
-			"webinarViewerSupport":             true,
-			"sdkRoomSupport":                   true,
-			"sberclassRoomSupport":             true,
-		},
-	}
-
-	preBody, err := json.Marshal(preconnectPayload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal preconnect payload: %w", err)
-	}
-
-	preReq, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		fmt.Sprintf("%s/room/%s/preconnect", apiBase, createResp.RoomID),
-		bytes.NewReader(preBody),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create preconnect request: %w", err)
-	}
-
-	for k, v := range headers {
-		preReq.Header.Set(k, v)
-	}
-
-	preResp, err := client.Do(preReq)
-	if err != nil {
-		return nil, fmt.Errorf("do preconnect request: %w", err)
-	}
-	defer func() { _ = preResp.Body.Close() }()
-
-	if preResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: status %d", errPreconnectFailed, preResp.StatusCode)
-	}
-
-	var preconnectResp struct {
-		ConnectorURL string `json:"connectorUrl"`
-	}
-	if err := json.NewDecoder(preResp.Body).Decode(&preconnectResp); err != nil {
-		return nil, fmt.Errorf("decode preconnect response: %w", err)
-	}
-
-	return &RoomInfo{
-		RoomID:       createResp.RoomID,
-		Password:     createResp.Password,
-		ConnectorURL: preconnectResp.ConnectorURL,
-	}, nil
+	return &res, nil
 }
 
-func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
-	clientID := uuid.New().String()
-	headers := map[string]string{
-		"X-Jazz-ClientId":   clientID,
-		"X-Jazz-AuthType":   "ANONYMOUS",
-		"X-Client-AuthType": "ANONYMOUS",
-		"Content-Type":      "application/json",
-	}
-
+func preconnect(ctx context.Context, roomID, password string, headers map[string]string) (string, error) {
 	preconnectPayload := map[string]any{
 		"password": password,
 		"jazzNextMigration": map[string]any{
@@ -162,7 +122,7 @@ func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
 
 	preBody, err := json.Marshal(preconnectPayload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal preconnect payload: %w", err)
+		return "", fmt.Errorf("marshal preconnect payload: %w", err)
 	}
 
 	preReq, err := http.NewRequestWithContext(
@@ -172,7 +132,7 @@ func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
 		bytes.NewReader(preBody),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create preconnect request: %w", err)
+		return "", fmt.Errorf("create preconnect request: %w", err)
 	}
 
 	for k, v := range headers {
@@ -182,24 +142,41 @@ func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
 	client := protect.NewHTTPClient()
 	preResp, err := client.Do(preReq)
 	if err != nil {
-		return nil, fmt.Errorf("do preconnect request: %w", err)
+		return "", fmt.Errorf("do preconnect request: %w", err)
 	}
 	defer func() { _ = preResp.Body.Close() }()
 
 	if preResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: status %d", errPreconnectFailed, preResp.StatusCode)
+		return "", fmt.Errorf("%w: status %d", errPreconnectFailed, preResp.StatusCode)
 	}
 
 	var preconnectResp struct {
 		ConnectorURL string `json:"connectorUrl"`
 	}
 	if err := json.NewDecoder(preResp.Body).Decode(&preconnectResp); err != nil {
-		return nil, fmt.Errorf("decode preconnect response: %w", err)
+		return "", fmt.Errorf("decode preconnect response: %w", err)
+	}
+
+	return preconnectResp.ConnectorURL, nil
+}
+
+func joinRoom(ctx context.Context, roomID, password string) (*RoomInfo, error) {
+	clientID := uuid.New().String()
+	headers := map[string]string{
+		"X-Jazz-ClientId":   clientID,
+		"X-Jazz-AuthType":   "ANONYMOUS",
+		"X-Client-AuthType": "ANONYMOUS",
+		"Content-Type":      "application/json",
+	}
+
+	connectorURL, err := preconnect(ctx, roomID, password, headers)
+	if err != nil {
+		return nil, err
 	}
 
 	return &RoomInfo{
 		RoomID:       roomID,
 		Password:     password,
-		ConnectorURL: preconnectResp.ConnectorURL,
+		ConnectorURL: connectorURL,
 	}, nil
 }

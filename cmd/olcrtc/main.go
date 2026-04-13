@@ -17,8 +17,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/provider"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
+	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
+	"github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 )
 
@@ -51,6 +51,9 @@ func main() {
 }
 
 func run() error {
+	provider.Register("jazz", jazz.New)
+	provider.Register("telemost", telemost.New)
+
 	cfg := parseFlags()
 	configureLogging(cfg.debug)
 

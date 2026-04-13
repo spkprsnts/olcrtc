@@ -1,3 +1,4 @@
+// Package telemost implements the Yandex Telemost WebRTC provider.
 package telemost
 
 import (
@@ -29,21 +30,29 @@ const (
 )
 
 var (
-	ErrDataChannelTimeout  = errors.New("datachannel timeout")
+	// ErrDataChannelTimeout is returned when the DataChannel fails to open in time.
+	ErrDataChannelTimeout = errors.New("datachannel timeout")
+	// ErrDataChannelNotReady is returned when attempting to send data before the DataChannel is open.
 	ErrDataChannelNotReady = errors.New("datachannel not ready")
-	ErrSendQueueClosed     = errors.New("send queue closed")
-	ErrSendQueueTimeout    = errors.New("send queue timeout")
-	ErrSessionClosed       = errors.New("session closed")
-	ErrPeerClosed          = errors.New("peer closed")
+	// ErrSendQueueClosed is returned when attempting to send data after the send queue has been closed.
+	ErrSendQueueClosed = errors.New("send queue closed")
+	// ErrSendQueueTimeout is returned when the send queue is full and the timeout is reached.
+	ErrSendQueueTimeout = errors.New("send queue timeout")
+	// ErrSessionClosed is returned when the session is closed.
+	ErrSessionClosed = errors.New("session closed")
+	// ErrPeerClosed is returned when the peer is closed.
+	ErrPeerClosed = errors.New("peer closed")
 )
 
-type TrafficShape struct { //nolint:revive
+// TrafficShape defines the parameters for outgoing traffic control.
+type TrafficShape struct {
 	MaxMessageSize int
 	MinDelay       time.Duration
 	MaxDelay       time.Duration
 }
 
-type Peer struct { //nolint:revive
+// Peer represents a Yandex Telemost WebRTC connection.
+type Peer struct {
 	roomURL         string
 	name            string
 	conn            *ConnectionInfo
@@ -75,22 +84,26 @@ type Peer struct { //nolint:revive
 	wg              sync.WaitGroup
 }
 
-func (p *Peer) GetSendQueue() chan []byte { //nolint:revive
+// GetSendQueue returns the transmission queue.
+func (p *Peer) GetSendQueue() chan []byte {
 	return p.sendQueue
 }
 
-func (p *Peer) GetBufferedAmount() uint64 { //nolint:revive
+// GetBufferedAmount returns the WebRTC buffered amount.
+func (p *Peer) GetBufferedAmount() uint64 {
 	if p.dc != nil {
 		return p.dc.BufferedAmount()
 	}
 	return 0
 }
 
-func (p *Peer) SetEndedCallback(cb func(string)) { //nolint:revive
+// SetEndedCallback sets the callback for connection termination.
+func (p *Peer) SetEndedCallback(cb func(string)) {
 	p.onEnded = cb
 }
 
-func (p *Peer) SetTrafficShape(shape TrafficShape) { //nolint:revive
+// SetTrafficShape configures the traffic control parameters.
+func (p *Peer) SetTrafficShape(shape TrafficShape) {
 	if shape.MaxMessageSize <= 0 {
 		shape.MaxMessageSize = realDataChannelMessageLimit
 	}
@@ -100,7 +113,8 @@ func (p *Peer) SetTrafficShape(shape TrafficShape) { //nolint:revive
 	p.trafficShape = shape
 }
 
-func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*Peer, error) { //nolint:revive
+// NewPeer creates a new Telemost provider peer.
+func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*Peer, error) {
 	conn, err := GetConnectionInfo(ctx, roomURL, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection info: %w", err)
@@ -178,7 +192,8 @@ func (p *Peer) drainReconnectQueue() {
 	}
 }
 
-func (p *Peer) Connect(ctx context.Context) error { //nolint:revive
+// Connect starts the WebRTC connection process.
+func (p *Peer) Connect(ctx context.Context) error {
 	p.closed.Store(false)
 
 	config := webrtc.Configuration{
@@ -323,7 +338,8 @@ func (p *Peer) startBackgroundGoroutines(ctx context.Context, keepAliveCh chan s
 	}()
 }
 
-func (p *Peer) Send(data []byte) error { //nolint:revive
+// Send queues data for transmission.
+func (p *Peer) Send(data []byte) error {
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return ErrDataChannelNotReady
 	}
@@ -388,7 +404,7 @@ func (p *Peer) sendHello() error {
 	return nil
 }
 
-func (p *Peer) handleSignaling(ctx context.Context) { //nolint:cyclop
+func (p *Peer) handleSignaling(ctx context.Context) {
 	pubSent := false
 
 	for {
@@ -404,16 +420,7 @@ func (p *Peer) handleSignaling(ctx context.Context) { //nolint:cyclop
 		p.updateWSDeadline()
 
 		uid, _ := msg["uid"].(string)
-		if _, ok := msg["ack"]; ok {
-			p.resolveAck(uid)
-		}
-
-		if serverHello, ok := msg["serverHello"].(map[string]interface{}); ok {
-			p.startTelemetry(ctx, serverHello)
-			p.sendAck(uid)
-		}
-
-		p.handleCommonMessages(msg, uid)
+		p.handleMessageEvents(ctx, msg, uid)
 
 		if isConferenceEndMessage(msg) {
 			p.signalEnded("conference ended")
@@ -428,13 +435,30 @@ func (p *Peer) handleSignaling(ctx context.Context) { //nolint:cyclop
 			pubSent = true
 		}
 
-		if answer, ok := msg["publisherSdpAnswer"].(map[string]interface{}); ok {
-			p.handleSdpAnswer(answer, uid)
-		}
+		p.handleSignalingResponses(msg, uid)
+	}
+}
 
-		if cand, ok := msg["webrtcIceCandidate"].(map[string]interface{}); ok {
-			p.handleICE(cand)
-		}
+func (p *Peer) handleMessageEvents(ctx context.Context, msg map[string]interface{}, uid string) {
+	if _, ok := msg["ack"]; ok {
+		p.resolveAck(uid)
+	}
+
+	if serverHello, ok := msg["serverHello"].(map[string]interface{}); ok {
+		p.startTelemetry(ctx, serverHello)
+		p.sendAck(uid)
+	}
+
+	p.handleCommonMessages(msg, uid)
+}
+
+func (p *Peer) handleSignalingResponses(msg map[string]interface{}, uid string) {
+	if answer, ok := msg["publisherSdpAnswer"].(map[string]interface{}); ok {
+		p.handleSdpAnswer(answer, uid)
+	}
+
+	if cand, ok := msg["webrtcIceCandidate"].(map[string]interface{}); ok {
+		p.handleICE(cand)
 	}
 }
 
@@ -622,27 +646,10 @@ func (p *Peer) sendPong(uid string) {
 	})
 }
 
-func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interface{}) { //nolint:cyclop
-	cfg, ok := serverHello["telemetryConfiguration"].(map[string]interface{})
+func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interface{}) {
+	endpoint, interval, ok := parseTelemetryCfg(serverHello)
 	if !ok {
 		return
-	}
-
-	endpoint, _ := cfg["logEndpoint"].(string)
-	if endpoint == "" {
-		endpoint, _ = cfg["endpoint"].(string)
-	}
-	if endpoint == "" {
-		endpoint, _ = cfg["url"].(string)
-	}
-	if endpoint == "" {
-		logger.Verbosef("Telemetry endpoint missing")
-		return
-	}
-
-	interval := defaultTelemetryInterval
-	if raw, ok := cfg["sendingInterval"].(float64); ok && raw > 0 {
-		interval = time.Duration(raw) * time.Millisecond
 	}
 
 	if !p.telemetryActive.CompareAndSwap(false, true) {
@@ -671,6 +678,32 @@ func (p *Peer) startTelemetry(ctx context.Context, serverHello map[string]interf
 			}
 		}
 	}()
+}
+
+func parseTelemetryCfg(serverHello map[string]interface{}) (string, time.Duration, bool) {
+	cfg, ok := serverHello["telemetryConfiguration"].(map[string]interface{})
+	if !ok {
+		return "", 0, false
+	}
+
+	endpoint, ok := cfg["logEndpoint"].(string)
+	if !ok || endpoint == "" {
+		endpoint, ok = cfg["endpoint"].(string)
+		if !ok || endpoint == "" {
+			endpoint, _ = cfg["url"].(string)
+		}
+	}
+
+	if endpoint == "" {
+		return "", 0, false
+	}
+
+	interval := defaultTelemetryInterval
+	if raw, ok := cfg["sendingInterval"].(float64); ok && raw > 0 {
+		interval = time.Duration(raw) * time.Millisecond
+	}
+
+	return endpoint, interval, true
 }
 
 func (p *Peer) stopTelemetry() {
@@ -971,15 +1004,18 @@ func (p *Peer) reconnect(ctx context.Context) error {
 	return nil
 }
 
-func (p *Peer) SetReconnectCallback(cb func(*webrtc.DataChannel)) { //nolint:revive
+// SetReconnectCallback sets the callback for reconnection events.
+func (p *Peer) SetReconnectCallback(cb func(*webrtc.DataChannel)) {
 	p.onReconnect = cb
 }
 
-func (p *Peer) SetShouldReconnect(fn func() bool) { //nolint:revive
+// SetShouldReconnect sets the policy for reconnection.
+func (p *Peer) SetShouldReconnect(fn func() bool) {
 	p.shouldReconnect = fn
 }
 
-func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,cyclop
+// WatchConnection monitors the connection lifecycle.
+func (p *Peer) WatchConnection(ctx context.Context) {
 	const maxReconnects = 10
 	const reconnectWindow = 5 * time.Minute
 
@@ -990,38 +1026,49 @@ func (p *Peer) WatchConnection(ctx context.Context) { //nolint:revive,cyclop
 		case <-p.closeCh:
 			return
 		case <-p.reconnectCh:
-			if time.Since(p.lastReconnect) > reconnectWindow {
-				p.reconnectCount = 0
-			}
-			p.reconnectCount++
-			p.lastReconnect = time.Now()
-
-			if p.reconnectCount > maxReconnects {
-				p.signalEnded("reconnect limit reached")
+			if p.handleReconnectAttempt(ctx, maxReconnects, reconnectWindow) {
 				return
-			}
-
-			backoff := time.Duration(p.reconnectCount) * 2 * time.Second
-			if backoff > 30*time.Second {
-				backoff = 30 * time.Second
-			}
-
-			for {
-				if err := p.reconnect(ctx); err != nil {
-					logger.Debugf("reconnect failed: %v", err)
-					select {
-					case <-ctx.Done():
-						return
-					case <-p.closeCh:
-						return
-					case <-time.After(backoff):
-						continue
-					}
-				}
-				break
 			}
 		}
 	}
+}
+
+func (p *Peer) handleReconnectAttempt(ctx context.Context, maxReconnects int, reconnectWindow time.Duration) bool {
+	if time.Since(p.lastReconnect) > reconnectWindow {
+		p.reconnectCount = 0
+	}
+	p.reconnectCount++
+	p.lastReconnect = time.Now()
+
+	if p.reconnectCount > maxReconnects {
+		p.signalEnded("reconnect limit reached")
+		return true
+	}
+
+	backoff := time.Duration(p.reconnectCount) * 2 * time.Second
+	if backoff > 30*time.Second {
+		backoff = 30 * time.Second
+	}
+
+	return p.retryReconnect(ctx, backoff)
+}
+
+func (p *Peer) retryReconnect(ctx context.Context, backoff time.Duration) bool {
+	for {
+		if err := p.reconnect(ctx); err != nil {
+			logger.Debugf("reconnect failed: %v", err)
+			select {
+			case <-ctx.Done():
+				return true
+			case <-p.closeCh:
+				return true
+			case <-time.After(backoff):
+				continue
+			}
+		}
+		break
+	}
+	return false
 }
 
 func (p *Peer) processSendQueue(workerID int, sessionCloseCh <-chan struct{}) {
@@ -1106,7 +1153,8 @@ func (p *Peer) monitorQueue(sessionCloseCh <-chan struct{}) {
 	}
 }
 
-func (p *Peer) CanSend() bool { //nolint:revive
+// CanSend checks if data can be sent.
+func (p *Peer) CanSend() bool {
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return false
 	}

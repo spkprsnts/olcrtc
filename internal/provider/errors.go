@@ -1,13 +1,17 @@
+// Package provider defines common errors for WebRTC providers.
 package provider
 
 import "errors"
 
 var (
-	ErrProviderNotFound    = errors.New("provider not found")
-	ErrDataChannelTimeout  = errors.New("datachannel timeout")
+	// ErrProviderNotFound is returned when the requested provider is not registered.
+	ErrProviderNotFound = errors.New("provider not found")
+	// ErrDataChannelTimeout is returned when the DataChannel fails to open in time.
+	ErrDataChannelTimeout = errors.New("datachannel timeout")
+	// ErrDataChannelNotReady is returned when attempting to send data before the DataChannel is open.
 	ErrDataChannelNotReady = errors.New("datachannel not ready")
-	ErrSendQueueClosed     = errors.New("send queue closed")
-	ErrSendQueueTimeout    = errors.New("send queue timeout")
-	ErrSessionClosed       = errors.New("session closed")
-	ErrPeerClosed          = errors.New("peer closed")
+	// ErrSendQueueClosed is returned when attempting to send data after the send queue has been closed.
+	ErrSendQueueClosed = errors.New("send queue closed")
+	// ErrSendQueueTimeout is returned when the send queue is full and the timeout is reached.
+	ErrSendQueueTimeout = errors.New("send queue timeout")
 )

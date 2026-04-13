@@ -1,7 +1,9 @@
+// Package jazz implements the SaluteJazz WebRTC provider.
 package jazz
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 
 	"github.com/google/uuid"
@@ -14,40 +16,58 @@ func encodeVarint(value uint64) []byte {
 }
 
 func encodeField(fieldNumber int, wireType int, data []byte) []byte {
-	tag := encodeVarint(uint64((fieldNumber << 3) | wireType))
-	if wireType == 0 {
-		return append(tag, data...)
-	}
-	if wireType == 2 {
+	tag := encodeVarint(uint64(fieldNumber)<<3 | uint64(wireType)) //nolint:gosec
+	switch wireType {
+	case 2:
 		length := encodeVarint(uint64(len(data)))
-		result := append(tag, length...)
-		return append(result, data...)
+		result := make([]byte, 0, len(tag)+len(length)+len(data))
+		result = append(result, tag...)
+		result = append(result, length...)
+		result = append(result, data...)
+		return result
+	default:
+		result := make([]byte, 0, len(tag)+len(data))
+		result = append(result, tag...)
+		result = append(result, data...)
+		return result
 	}
-	return append(tag, data...)
 }
 
+// EncodeDataPacket wraps a payload into a SaluteJazz data packet.
 func EncodeDataPacket(payload []byte) []byte {
 	msgID := uuid.New().String()
 
 	userFields := encodeField(2, 2, payload)
 	userFields = append(userFields, encodeField(8, 2, []byte(msgID))...)
 
-	userPacket := userFields
-
 	dp := encodeField(1, 0, encodeVarint(0))
-	dp = append(dp, encodeField(2, 2, userPacket)...)
+	dp = append(dp, encodeField(2, 2, userFields)...)
 
 	return dp
 }
 
 func readVarint(r io.ByteReader) (uint64, error) {
-	return binary.ReadUvarint(r)
+	val, err := binary.ReadUvarint(r)
+	if err != nil {
+		return 0, fmt.Errorf("read uvarint: %w", err)
+	}
+	return val, nil
 }
 
+// DecodeDataPacket extracts the payload from a SaluteJazz data packet.
 func DecodeDataPacket(raw []byte) ([]byte, bool) {
-	reader := &byteReader{data: raw, pos: 0}
+	userData, ok := parseFields(raw, 2)
+	if !ok {
+		return nil, false
+	}
 
-	var userData []byte
+	payload, ok := parseFields(userData, 2)
+	return payload, ok
+}
+
+func parseFields(data []byte, targetField int) ([]byte, bool) {
+	reader := &byteReader{data: data, pos: 0}
+	var result []byte
 
 	for reader.pos < len(reader.data) {
 		tagVal, err := readVarint(reader)
@@ -58,71 +78,47 @@ func DecodeDataPacket(raw []byte) ([]byte, bool) {
 		fieldNumber := int(tagVal >> 3)
 		wireType := int(tagVal & 0x07)
 
-		if wireType == 0 {
-			_, _ = readVarint(reader)
-		} else if wireType == 2 {
-			length, err := readVarint(reader)
-			if err != nil {
-				break
-			}
-			data := make([]byte, length)
-			n, err := reader.Read(data)
-			if err != nil || n != int(length) {
-				break
-			}
-			if fieldNumber == 2 {
-				userData = data
-			}
-		} else if wireType == 1 {
-			reader.pos += 8
-		} else if wireType == 5 {
-			reader.pos += 4
-		} else {
-			break
+		fieldData, ok := handleWireType(reader, wireType, len(data))
+		if !ok {
+			return result, len(result) > 0
+		}
+
+		if fieldNumber == targetField && wireType == 2 {
+			result = fieldData
 		}
 	}
 
-	if userData == nil {
+	return result, len(result) > 0
+}
+
+func handleWireType(reader *byteReader, wireType int, dataLen int) ([]byte, bool) {
+	switch wireType {
+	case 0:
+		_, _ = readVarint(reader)
+		return nil, true
+	case 2:
+		length, err := readVarint(reader)
+		if err != nil {
+			return nil, false
+		}
+		if length > uint64(dataLen)-uint64(reader.pos) { //nolint:gosec
+			return nil, false
+		}
+		fieldData := make([]byte, length)
+		n, err := reader.Read(fieldData)
+		if err != nil || uint64(n) != length { //nolint:gosec
+			return nil, false
+		}
+		return fieldData, true
+	case 1:
+		reader.pos += 8
+		return nil, true
+	case 5:
+		reader.pos += 4
+		return nil, true
+	default:
 		return nil, false
 	}
-
-	innerReader := &byteReader{data: userData, pos: 0}
-	var payload []byte
-
-	for innerReader.pos < len(innerReader.data) {
-		tagVal, err := readVarint(innerReader)
-		if err != nil {
-			break
-		}
-
-		fn := int(tagVal >> 3)
-		wt := int(tagVal & 0x07)
-
-		if wt == 0 {
-			_, _ = readVarint(innerReader)
-		} else if wt == 2 {
-			length, err := readVarint(innerReader)
-			if err != nil {
-				break
-			}
-			data := make([]byte, length)
-			n, err := innerReader.Read(data)
-			if err != nil || n != int(length) {
-				break
-			}
-			if fn == 2 {
-				payload = data
-			}
-		} else if wt == 1 {
-			innerReader.pos += 8
-		} else if wt == 5 {
-			innerReader.pos += 4
-		} else {
-			break
-		}
-	}
-
-	return payload, len(payload) > 0
 }
 
 type byteReader struct {

@@ -22,8 +22,6 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/provider"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
-	_ "github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -33,6 +31,7 @@ var (
 	errNoConnectedPeers       = errors.New("no connected peers available")
 )
 
+// Client handles local SOCKS5 connections and tunnels them through WebRTC.
 type Client struct {
 	peers    []provider.Provider
 	cipher   *crypto.Cipher
@@ -44,6 +43,7 @@ type Client struct {
 
 const defaultSOCKSListenHost = "127.0.0.1"
 
+// Run starts the client with the specified parameters.
 func Run(
 	ctx context.Context,
 	providerName,
@@ -57,6 +57,7 @@ func Run(
 	return RunWithReady(ctx, providerName, roomURL, keyHex, socksPort, socksHost, socksUser, socksPass, nil)
 }
 
+// RunWithReady starts the client and calls onReady when it is listening.
 func RunWithReady(
 	ctx context.Context,
 	providerName,
@@ -171,6 +172,9 @@ func waitUntilPeersCanSend(peers []provider.Provider) {
 	}
 }
 
+// nextPeer returns the next provider for load balancing.
+//
+//nolint:ireturn
 func (c *Client) nextPeer() (provider.Provider, error) {
 	switch len(c.peers) {
 	case 0:
