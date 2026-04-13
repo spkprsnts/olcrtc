@@ -54,6 +54,10 @@ func Cross() error {
 		{"windows", "amd64"},
 		{"darwin", "amd64"},
 		{"darwin", "arm64"},
+		{"freebsd", "amd64"},
+		{"freebsd", "arm64"},
+		{"openbsd", "amd64"},
+		{"openbsd", "arm64"},
 	}
 
 	for _, t := range targets {
@@ -120,7 +124,12 @@ func buildBinary(name, pkg, os_, arch string) error {
 		return err
 	}
 
-	out := filepath.Join(buildDir, binaryName(name, os_))
+	ext := ""
+	if os_ == "windows" {
+		ext = ".exe"
+	}
+	outName := fmt.Sprintf("%s-%s-%s%s", name, os_, arch, ext)
+	out := filepath.Join(buildDir, outName)
 	fmt.Printf("building %s (%s/%s) -> %s\n", name, os_, arch, out)
 
 	env := map[string]string{
@@ -147,7 +156,12 @@ func buildUIBinary(os_, arch string) error {
 		return err
 	}
 
-	absOut, err := filepath.Abs(filepath.Join(buildDir, binaryName("olcrtc-ui", os_)))
+	ext := ""
+	if os_ == "windows" {
+		ext = ".exe"
+	}
+	outName := fmt.Sprintf("%s-%s-%s%s", "olcrtc-ui", os_, arch, ext)
+	absOut, err := filepath.Abs(filepath.Join(buildDir, outName))
 	if err != nil {
 		return err
 	}
@@ -171,12 +185,6 @@ func buildUIBinary(os_, arch string) error {
 	return cmd.Run()
 }
 
-func binaryName(name, os_ string) string {
-	if os_ == "windows" {
-		return name + ".exe"
-	}
-	return name
-}
 
 func ensureBuildDir() error {
 	return os.MkdirAll(buildDir, 0o755)
