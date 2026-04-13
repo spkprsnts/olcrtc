@@ -203,9 +203,20 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 	})
 
 	p.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		logger.Verbosef("[Jazz] Received %d bytes on publisher DC", len(msg.Data))
-		if p.onData != nil && len(msg.Data) > 0 {
-			p.onData(msg.Data)
+		logger.Verbosef("[Jazz] Received %d bytes on publisher DC (raw)", len(msg.Data))
+
+		payload, ok := DecodeDataPacket(msg.Data)
+		if !ok {
+			logger.Debugf("[Jazz] Failed to decode DataPacket, trying raw")
+			if p.onData != nil && len(msg.Data) > 0 {
+				p.onData(msg.Data)
+			}
+			return
+		}
+
+		logger.Verbosef("[Jazz] Decoded DataPacket: %d bytes payload", len(payload))
+		if p.onData != nil && len(payload) > 0 {
+			p.onData(payload)
 		}
 	})
 
@@ -216,9 +227,20 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 		}
 
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC (_reliable)", len(msg.Data))
-			if p.onData != nil && len(msg.Data) > 0 {
-				p.onData(msg.Data)
+			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC (_reliable, raw)", len(msg.Data))
+
+			payload, ok := DecodeDataPacket(msg.Data)
+			if !ok {
+				logger.Debugf("[Jazz] Failed to decode DataPacket from subscriber, trying raw")
+				if p.onData != nil && len(msg.Data) > 0 {
+					p.onData(msg.Data)
+				}
+				return
+			}
+
+			logger.Verbosef("[Jazz] Decoded DataPacket from subscriber: %d bytes payload", len(payload))
+			if p.onData != nil && len(payload) > 0 {
+				p.onData(payload)
 			}
 		})
 	})
@@ -452,7 +474,10 @@ func (p *Peer) processSendQueue() {
 		case <-p.closeCh:
 			return
 		case data := <-p.sendQueue:
-			if err := p.dc.Send(data); err != nil {
+			encoded := EncodeDataPacket(data)
+			logger.Verbosef("[Jazz] Sending %d bytes (encoded to %d bytes)", len(data), len(encoded))
+
+			if err := p.dc.Send(encoded); err != nil {
 				logger.Debugf("send error: %v", err)
 				p.queueReconnect()
 				return
