@@ -12,8 +12,23 @@ WORK_DIR="/tmp/olcrtc-client"
 
 SOCKS_IP="127.0.0.1"
 SOCKS_PORT="8808"
+BRANCH="main"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --branch=*)
+            BRANCH="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 echo "=== OlcRTC Client Deployment Script ==="
+echo ""
+echo "[*] Using branch: $BRANCH"
 echo ""
 
 if ! command -v podman &> /dev/null; then
@@ -51,11 +66,35 @@ fi
 
 echo "[+] Using Podman"
 echo ""
-read -p "Enter Telemost Room ID: " ROOM_ID
+echo "Select provider:"
+echo "  1) telemost"
+echo "  2) jazz"
+read -p "Enter choice [1-2, default: 1]: " PROVIDER_CHOICE
 
-if [ -z "$ROOM_ID" ]; then
-    echo "[X] Room ID cannot be empty"
-    exit 1
+case "$PROVIDER_CHOICE" in
+    2)
+        PROVIDER="jazz"
+        ;;
+    *)
+        PROVIDER="telemost"
+        ;;
+esac
+
+echo "[*] Using provider: $PROVIDER"
+echo ""
+
+if [ "$PROVIDER" = "jazz" ]; then
+    read -p "Enter Room ID (format: roomId:password from server): " ROOM_ID
+    if [ -z "$ROOM_ID" ]; then
+        echo "[X] Room ID cannot be empty"
+        exit 1
+    fi
+else
+    read -p "Enter Room ID: " ROOM_ID
+    if [ -z "$ROOM_ID" ]; then
+        echo "[X] Room ID cannot be empty"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -84,7 +123,7 @@ rm -rf $WORK_DIR
 mkdir -p $WORK_DIR
 
 echo "[*] Cloning repository..."
-git clone --depth 1 $REPO_URL $WORK_DIR
+git clone --depth 1 --branch "$BRANCH" $REPO_URL $WORK_DIR
 
 echo "[*] Pulling Go image..."
 podman pull $IMAGE_NAME
@@ -109,7 +148,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode cnc -id "$ROOM_ID" -key "$KEY" -socks-port $SOCKS_PORT -socks-host 0.0.0.0
+    ./olcrtc -mode cnc -provider "$PROVIDER" -id "$ROOM_ID" -key "$KEY" -socks-port $SOCKS_PORT -socks-host 0.0.0.0
 
 sleep 2
 
@@ -117,6 +156,7 @@ echo ""
 echo "[+] Client started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
+echo "Provider: $PROVIDER"
 echo "Room ID: $ROOM_ID"
 echo "SOCKS5 proxy: $SOCKS_IP:$SOCKS_PORT"
 echo ""

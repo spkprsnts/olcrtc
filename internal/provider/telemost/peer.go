@@ -22,25 +22,19 @@ import (
 )
 
 const (
-	realDataChannelMessageLimit = 8192
+	realDataChannelMessageLimit = 12288
 	defaultSendDelayLow         = 2 * time.Millisecond
 	defaultSendDelayMax         = 12 * time.Millisecond
 	defaultTelemetryInterval    = 20 * time.Second
 )
 
 var (
-	// ErrDataChannelTimeout is returned when the datachannel fails to open within the timeout.
-	ErrDataChannelTimeout = errors.New("datachannel timeout")
-	// ErrDataChannelNotReady is returned when the datachannel is not open.
+	ErrDataChannelTimeout  = errors.New("datachannel timeout")
 	ErrDataChannelNotReady = errors.New("datachannel not ready")
-	// ErrSendQueueClosed is returned when the send queue is closed.
-	ErrSendQueueClosed = errors.New("send queue closed")
-	// ErrSendQueueTimeout is returned when sending to the queue times out.
-	ErrSendQueueTimeout = errors.New("send queue timeout")
-	// ErrSessionClosed is returned when the session is closed.
-	ErrSessionClosed = errors.New("session closed")
-	// ErrPeerClosed is returned when the peer is closed.
-	ErrPeerClosed = errors.New("peer closed")
+	ErrSendQueueClosed     = errors.New("send queue closed")
+	ErrSendQueueTimeout    = errors.New("send queue timeout")
+	ErrSessionClosed       = errors.New("session closed")
+	ErrPeerClosed          = errors.New("peer closed")
 )
 
 type TrafficShape struct { //nolint:revive
