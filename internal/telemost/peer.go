@@ -285,9 +285,6 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}, sessionCloseCh ch
 }
 
 func (p *Peer) onDataChannelClose() {
-	if p.onReconnect != nil {
-		p.onReconnect(nil)
-	}
 	if !p.closed.Load() {
 		p.queueReconnect()
 	}

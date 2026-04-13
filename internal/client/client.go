@@ -221,10 +221,10 @@ func (c *Client) addPeer(
 func (c *Client) onReconnect(peerID int, dc *webrtc.DataChannel) {
 	if dc == nil {
 		log.Printf("peer %d channel closed", peerID)
-	} else {
-		log.Printf("peer %d reconnected", peerID)
+		return
 	}
 
+	log.Printf("peer %d reconnected", peerID)
 	c.mux.UpdateSendFunc(c.sendFrame)
 	c.mux.Reset()
 }
