@@ -17,6 +17,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+const (
+	maxDataChannelMessageSize = 12288
+	sendDelay                 = 2 * time.Millisecond
+)
+
 type Peer struct {
 	name            string
 	roomInfo        *RoomInfo
@@ -474,6 +479,11 @@ func (p *Peer) processSendQueue() {
 		case <-p.closeCh:
 			return
 		case data := <-p.sendQueue:
+			if len(data) > maxDataChannelMessageSize {
+				logger.Debugf("[Jazz] Message too large: %d bytes (max %d)", len(data), maxDataChannelMessageSize)
+				continue
+			}
+
 			encoded := EncodeDataPacket(data)
 			logger.Verbosef("[Jazz] Sending %d bytes (encoded to %d bytes)", len(data), len(encoded))
 
@@ -482,7 +492,7 @@ func (p *Peer) processSendQueue() {
 				p.queueReconnect()
 				return
 			}
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(sendDelay)
 		}
 	}
 }

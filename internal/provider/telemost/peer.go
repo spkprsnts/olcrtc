@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	realDataChannelMessageLimit = 8192
+	realDataChannelMessageLimit = 12288
 	defaultSendDelayLow         = 2 * time.Millisecond
 	defaultSendDelayMax         = 12 * time.Millisecond
 	defaultTelemetryInterval    = 20 * time.Second
