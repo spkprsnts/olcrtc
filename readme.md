@@ -7,7 +7,7 @@
 
 </div>
 
-# яндекс удалил DataChannel ! проект переписывается VideoChannel и Jazz , [ожидайте](https://github.com/openlibrecommunity/olcrtc/issues/1) !
+# Yandex Deleted DataChannel, project rewite to VideoChannel and Jazz , [wait and see](https://github.com/openlibrecommunity/olcrtc/issues/1) 
 
 ## About
 olcRTC - across the Sea
