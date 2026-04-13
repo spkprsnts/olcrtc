@@ -275,11 +275,6 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}, sessionCloseCh ch
 	p.dc.OnMessage(p.onDataChannelMessage)
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
-		dc.OnClose(func() {
-			if !p.closed.Load() {
-				p.queueReconnect()
-			}
-		})
 		dc.OnMessage(p.onDataChannelMessage)
 	})
 }
