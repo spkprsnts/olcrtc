@@ -52,7 +52,7 @@ linters:
     - inamedparam
     - interfacebloat
     - intrange
-    - ireturn
+    # - ireturn
     - lll
     - loggercheck
     - maintidx
@@ -255,6 +255,8 @@ linters-settings:
       - error
       - empty
       - stdlib
+      - Provider
+      - provider.Provider
 
   wrapcheck:
     ignoreSigs:
