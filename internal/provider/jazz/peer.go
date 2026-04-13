@@ -201,13 +201,16 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 	})
 
 	p.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		logger.Verbosef("[Jazz] Received %d bytes on DataChannel", len(msg.Data))
 		if p.onData != nil && len(msg.Data) > 0 {
 			p.onData(msg.Data)
 		}
 	})
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
+		logger.Verbosef("[Jazz] Received subscriber DataChannel: %s", dc.Label())
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC", len(msg.Data))
 			if p.onData != nil && len(msg.Data) > 0 {
 				p.onData(msg.Data)
 			}
