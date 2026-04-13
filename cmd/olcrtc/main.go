@@ -195,6 +195,9 @@ func buildRoomURL(providerName, roomID string) string {
 	case "telemost":
 		return "https://telemost.yandex.ru/j/" + roomID
 	case "jazz":
+		if roomID == "" {
+			return "any"
+		}
 		return roomID
 	default:
 		return roomID

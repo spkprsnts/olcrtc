@@ -40,13 +40,23 @@ type Peer struct {
 	groupID         string
 }
 
-func NewPeer(ctx context.Context, name string, onData func([]byte)) (*Peer, error) {
-	roomInfo, err := createRoom(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create room: %w", err)
-	}
+func NewPeer(ctx context.Context, roomID, name string, onData func([]byte)) (*Peer, error) {
+	var roomInfo *RoomInfo
+	var err error
 
-	log.Printf("Jazz room created: %s (password: %s)", roomInfo.RoomID, roomInfo.Password)
+	if roomID == "" || roomID == "any" || roomID == "dummy" {
+		roomInfo, err = createRoom(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create room: %w", err)
+		}
+		log.Printf("Jazz room created: %s (password: %s)", roomInfo.RoomID, roomInfo.Password)
+	} else {
+		roomInfo, err = joinRoom(ctx, roomID)
+		if err != nil {
+			return nil, fmt.Errorf("join room: %w", err)
+		}
+		log.Printf("Jazz joining room: %s", roomInfo.RoomID)
+	}
 
 	return &Peer{
 		name:           name,
