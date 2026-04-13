@@ -186,6 +186,7 @@ func (p *Peer) sendJoin() error {
 
 func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 	p.dc.OnOpen(func() {
+		logger.Verbosef("[Jazz] Publisher DC opened: %s", p.dc.Label())
 		p.wg.Add(1)
 		go func() {
 			defer p.wg.Done()
@@ -195,13 +196,14 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 	})
 
 	p.dc.OnClose(func() {
+		logger.Verbosef("[Jazz] Publisher DC closed")
 		if !p.closed.Load() {
 			p.queueReconnect()
 		}
 	})
 
 	p.dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		logger.Verbosef("[Jazz] Received %d bytes on DataChannel", len(msg.Data))
+		logger.Verbosef("[Jazz] Received %d bytes on publisher DC", len(msg.Data))
 		if p.onData != nil && len(msg.Data) > 0 {
 			p.onData(msg.Data)
 		}
@@ -209,8 +211,12 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}) {
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
 		logger.Verbosef("[Jazz] Received subscriber DataChannel: %s", dc.Label())
+		if dc.Label() != "_reliable" {
+			return
+		}
+
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC", len(msg.Data))
+			logger.Verbosef("[Jazz] Received %d bytes on subscriber DC (_reliable)", len(msg.Data))
 			if p.onData != nil && len(msg.Data) > 0 {
 				p.onData(msg.Data)
 			}
