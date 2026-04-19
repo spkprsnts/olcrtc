@@ -55,9 +55,7 @@ async def create_peer(name, is_server=False):
     ))
     
     dc_pub = pc_pub.createDataChannel("olcrtc", ordered=True)
-    dc_ready = asyncio.Event()
-    dc_active = None
-    dc_pub_alive = False
+    dc_pub_open = asyncio.Event()
     
     stats = {
         "sent": 0,
@@ -69,61 +67,31 @@ async def create_peer(name, is_server=False):
     
     @dc_pub.on("open")
     def on_pub_open():
-        nonlocal dc_pub_alive
-        dc_pub_alive = True
-        print(f"      [DC-PUB] {name} DataChannel OPENED: label={dc_pub.label}, state={dc_pub.readyState}")
-    
-    @dc_pub.on("close")
-    def on_pub_close():
-        nonlocal dc_pub_alive
-        dc_pub_alive = False
-        print(f"      [DC-PUB] {name} DataChannel CLOSED")
-    
-    @dc_pub.on("error")
-    def on_pub_error(error):
-        print(f"      [DC-PUB] {name} DataChannel ERROR: {error}")
+        dc_pub_open.set()
     
     @dc_pub.on("message")
     def on_pub_msg(msg):
-        msg_preview = msg[:50] if len(msg) > 50 else msg
-        print(f"      [DC-PUB] {name} received message: {len(msg)} bytes, preview: {msg_preview}")
         stats["received"] += 1
         stats["bytes_received"] += len(msg)
         stats["messages"].append(("received", msg, time.time()))
     
     @pc_sub.on("datachannel")
     def on_sub_dc(channel):
-        nonlocal dc_active
-        print(f"      [DC-SUB] {name} received DataChannel: label={channel.label}, state={channel.readyState}")
-        dc_active = channel
-        dc_ready.set()
-        
-        @channel.on("open")
-        def on_sub_open():
-            print(f"      [DC-SUB] {name} DataChannel OPENED: label={channel.label}")
-        
-        @channel.on("close")
-        def on_sub_close():
-            print(f"      [DC-SUB] {name} DataChannel CLOSED: label={channel.label}")
-        
         @channel.on("message")
         def on_message(message):
-            msg_preview = message[:50] if len(message) > 50 else message
-            print(f"      [DC-SUB] {name} received message: {len(message)} bytes, preview: {msg_preview}")
             stats["received"] += 1
             stats["bytes_received"] += len(message)
             stats["messages"].append(("received", message, time.time()))
             
-            if is_server and dc_active:
+            if is_server and channel.label == "olcrtc":
                 response = f"Echo: {message}"
                 try:
-                    dc_active.send(response)
+                    dc_pub.send(response)
                     stats["sent"] += 1
                     stats["bytes_sent"] += len(response)
                     stats["messages"].append(("sent", response, time.time()))
-                    print(f"      [DC-ACTIVE] {name} sent echo: {len(response)} bytes")
-                except Exception as e:
-                    print(f"      [DC-ACTIVE] {name} send error: {e}")
+                except:
+                    pass
     
     ws = await websockets.connect(ws_url)
     
@@ -231,22 +199,6 @@ async def create_peer(name, is_server=False):
             except:
                 break
     
-    @pc_pub.on("connectionstatechange")
-    async def on_pub_state():
-        print(f"      [PC-PUB] {name} connection state: {pc_pub.connectionState}")
-    
-    @pc_sub.on("connectionstatechange")
-    async def on_sub_state():
-        print(f"      [PC-SUB] {name} connection state: {pc_sub.connectionState}")
-    
-    @pc_sub.on("iceconnectionstatechange")
-    async def on_sub_ice():
-        print(f"      [PC-SUB] {name} ICE state: {pc_sub.iceConnectionState}")
-    
-    @pc_pub.on("iceconnectionstatechange")
-    async def on_pub_ice():
-        print(f"      [PC-PUB] {name} ICE state: {pc_pub.iceConnectionState}")
-    
     @pc_sub.on("icecandidate")
     async def on_sub_ice(event):
         if event.candidate:
@@ -279,10 +231,8 @@ async def create_peer(name, is_server=False):
     
     return {
         "name": name,
-        "dc_active": lambda: dc_active,
         "dc_pub": dc_pub,
-        "dc_pub_alive": lambda: dc_pub_alive,
-        "dc_ready": dc_ready,
+        "dc_pub_open": dc_pub_open,
         "stats": stats,
         "ws": ws,
         "ws_task": ws_task,
@@ -311,7 +261,7 @@ async def run_full_test():
     print("[1/4] Creating server peer...")
     try:
         server = await create_peer("Server", is_server=True)
-        await asyncio.wait_for(server["dc_ready"].wait(), timeout=10.0)
+        await asyncio.wait_for(server["dc_pub_open"].wait(), timeout=10.0)
         results["server_connected"] = True
         print("      :P Server connected")
     except Exception as e:
@@ -322,7 +272,7 @@ async def run_full_test():
     print("\n[2/4] Creating client peer...")
     try:
         client = await create_peer("Client", is_server=False)
-        await asyncio.wait_for(client["dc_ready"].wait(), timeout=10.0)
+        await asyncio.wait_for(client["dc_pub_open"].wait(), timeout=10.0)
         results["client_connected"] = True
         print("      :P Client connected")
     except Exception as e:
@@ -341,30 +291,12 @@ async def run_full_test():
     ]
     
     try:
-        dc_client = client["dc_active"]()
-        if not dc_client:
-            raise Exception("Client DataChannel not available")
-        
-        print(f"      Using DataChannel: label={dc_client.label}, state={dc_client.readyState}")
-        
         for i, msg in enumerate(test_messages, 1):
             send_time = time.time()
-            
-            try:
-                dc_client.send(msg)
-                print(f"      -> Sent via dc_active message {i}/{len(test_messages)} ({len(msg)}b)")
-            except Exception as e:
-                print(f"      X Failed to send via dc_active: {e}")
-                
-                if client["dc_pub_alive"]():
-                    try:
-                        client["dc_pub"].send(msg)
-                        print(f"      -> Sent via dc_pub message {i}/{len(test_messages)} ({len(msg)}b)")
-                    except Exception as e2:
-                        print(f"      X Failed to send via dc_pub: {e2}")
-            
+            client["dc_pub"].send(msg)
             client["stats"]["sent"] += 1
             client["stats"]["bytes_sent"] += len(msg)
+            print(f"      -> Sent message {i}/{len(test_messages)} ({len(msg)}b)")
             await asyncio.sleep(0.5)
         
         await asyncio.sleep(3)
