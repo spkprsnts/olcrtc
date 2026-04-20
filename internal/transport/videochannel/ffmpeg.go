@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	ffmpegFrameTimeout = 10 * time.Second
+	ffmpegFrameTimeout  = 10 * time.Second
+	defaultVideoBitrate = "2048k"
 )
 
 var (
@@ -112,6 +113,8 @@ type ffmpegEncoder struct {
 	stdin     io.WriteCloser
 	stderr    *bytes.Buffer
 	frames    chan []byte
+	width     int
+	height    int
 	closed    atomic.Bool
 	closeOnce sync.Once
 	errMu     sync.Mutex
@@ -162,6 +165,8 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate string) (*
 		stdin:  stdin,
 		stderr: stderr,
 		frames: make(chan []byte, 8),
+		width:  width,
+		height: height,
 	}
 
 	go enc.readIVF(stdout)
@@ -169,8 +174,8 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate string) (*
 }
 
 func (e *ffmpegEncoder) EncodeFrame(frame []byte) ([]byte, error) {
-	if len(frame) != logicalFrameBytes {
-		return nil, fmt.Errorf("unexpected encoder frame size: %d", len(frame))
+	if len(frame) != e.width*e.height {
+		return nil, fmt.Errorf("unexpected encoder frame size: %d (expected %d)", len(frame), e.width*e.height)
 	}
 	if err := e.processErr(); err != nil {
 		return nil, err
