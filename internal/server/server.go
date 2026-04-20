@@ -32,15 +32,15 @@ var (
 	ErrSocks5AuthFailed = errors.New("SOCKS5 auth failed")
 	// ErrSocks5ConnectFailed is returned when SOCKS5 connection fails.
 	ErrSocks5ConnectFailed = errors.New("SOCKS5 connect failed")
-	// ErrNoPeers is returned when no peers are available.
-	ErrNoPeers = errors.New("no peers available")
+	// ErrNoLinks is returned when no links are available.
+	ErrNoLinks = errors.New("no links available")
 	// ErrDialProxy is returned when dialing the proxy fails.
 	ErrDialProxy = errors.New("failed to dial proxy")
 	// ErrEncryptFailed is returned when encryption fails.
 	ErrEncryptFailed = errors.New("encrypt failed")
 )
 
-// Server handles incoming WebRTC connections and proxies their traffic.
+// Server handles incoming tunnel connections and proxies their traffic.
 type Server struct {
 	links          []link.Link
 	cipher         *crypto.Cipher
@@ -49,7 +49,7 @@ type Server struct {
 	connMu         sync.RWMutex
 	streamPumps    map[uint16]net.Conn
 	pumpMu         sync.Mutex
-	peerIdx        atomic.Uint32
+	linkIdx        atomic.Uint32
 	activeClients  atomic.Int32
 	wg             sync.WaitGroup
 	dnsServer      string
@@ -70,7 +70,7 @@ func Run(
 	ctx context.Context,
 	linkName,
 	transportName,
-	providerName,
+	carrierName,
 	roomURL,
 	keyHex string,
 	dnsServer,
@@ -102,10 +102,10 @@ func Run(
 	s.setupResolver()
 	s.setupMux()
 
-	const peerCount = 1
-	for i := range peerCount {
-		if err := s.addTransport(runCtx, linkName, transportName, providerName, roomURL, i, cancel); err != nil {
-			return fmt.Errorf("addTransport failed: %w", err)
+	const linkCount = 1
+	for i := range linkCount {
+		if err := s.addLink(runCtx, linkName, transportName, carrierName, roomURL, i, cancel); err != nil {
+			return fmt.Errorf("addLink failed: %w", err)
 		}
 	}
 
@@ -179,25 +179,25 @@ func (s *Server) setupMux() {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
 		if len(s.links) == 0 {
-			return ErrNoPeers
+			return ErrNoLinks
 		}
-		idx := s.peerIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
+		idx := s.linkIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
 		return s.links[idx].Send(encrypted)
 	})
 }
 
-func (s *Server) addTransport(
+func (s *Server) addLink(
 	ctx context.Context,
 	linkName,
 	transportName,
-	providerName,
+	carrierName,
 	roomURL string,
-	peerID int,
+	linkID int,
 	cancel context.CancelFunc,
 ) error {
 	ln, err := link.New(ctx, linkName, link.Config{
 		Transport: transportName,
-		Carrier:   providerName,
+		Carrier:   carrierName,
 		RoomURL:   roomURL,
 		Name:      names.Generate(),
 		OnData:    s.onData,
@@ -210,20 +210,20 @@ func (s *Server) addTransport(
 	}
 
 	ln.SetEndedCallback(func(reason string) {
-		logger.Infof("Server transport %d reported conference end: %s", peerID, reason)
+		logger.Infof("Server link %d reported conference end: %s", linkID, reason)
 		cancel()
 	})
 	s.links = append(s.links, ln)
 
 	ln.SetReconnectCallback(func() {
-		s.handleTransportReconnect(peerID)
+		s.handleLinkReconnect(linkID)
 	})
 
-	logger.Infof("Connecting transport %d via %s/%s...", peerID, transportName, providerName)
+	logger.Infof("Connecting link %d via %s/%s/%s...", linkID, linkName, transportName, carrierName)
 	if err := ln.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect transport: %w", err)
+		return fmt.Errorf("failed to connect link: %w", err)
 	}
-	logger.Infof("Transport %d connected", peerID)
+	logger.Infof("Link %d connected", linkID)
 
 	s.wg.Add(1)
 	go func() {
@@ -233,8 +233,8 @@ func (s *Server) addTransport(
 	return nil
 }
 
-func (s *Server) handleTransportReconnect(peerID int) {
-	logger.Infof("transport %d reconnect event", peerID)
+func (s *Server) handleLinkReconnect(linkID int) {
+	logger.Infof("link %d reconnect event", linkID)
 
 	s.connMu.Lock()
 	for sid, conn := range s.connections {
@@ -251,9 +251,9 @@ func (s *Server) handleTransportReconnect(peerID int) {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
 		if len(s.links) == 0 {
-			return ErrNoPeers
+			return ErrNoLinks
 		}
-		idx := s.peerIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
+		idx := s.linkIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
 		return s.links[idx].Send(encrypted)
 	})
 	s.mux.Reset()
@@ -353,7 +353,7 @@ func (s *Server) shutdown() {
 	s.connMu.Unlock()
 
 	for i, tr := range s.links {
-		logger.Infof("closing transport %d", i)
+		logger.Infof("closing link %d", i)
 		_ = tr.Close()
 	}
 }
