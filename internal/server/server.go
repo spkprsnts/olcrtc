@@ -76,6 +76,10 @@ func Run(
 	dnsServer,
 	socksProxyAddr string,
 	socksProxyPort int,
+	videoWidth int,
+	videoHeight int,
+	videoFPS int,
+	videoBitrate string,
 ) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -104,7 +108,7 @@ func Run(
 
 	const linkCount = 1
 	for i := range linkCount {
-		if err := s.addLink(runCtx, linkName, transportName, carrierName, roomURL, i, cancel); err != nil {
+		if err := s.addLink(runCtx, linkName, transportName, carrierName, roomURL, i, cancel, videoWidth, videoHeight, videoFPS, videoBitrate); err != nil {
 			return fmt.Errorf("addLink failed: %w", err)
 		}
 	}
@@ -194,16 +198,22 @@ func (s *Server) addLink(
 	roomURL string,
 	linkID int,
 	cancel context.CancelFunc,
+	videoWidth, videoHeight, videoFPS int,
+	videoBitrate string,
 ) error {
 	ln, err := link.New(ctx, linkName, link.Config{
-		Transport: transportName,
-		Carrier:   carrierName,
-		RoomURL:   roomURL,
-		Name:      names.Generate(),
-		OnData:    s.onData,
-		DNSServer: s.dnsServer,
-		ProxyAddr: s.socksProxyAddr,
-		ProxyPort: s.socksProxyPort,
+		Transport:    transportName,
+		Carrier:      carrierName,
+		RoomURL:      roomURL,
+		Name:         names.Generate(),
+		OnData:       s.onData,
+		DNSServer:    s.dnsServer,
+		ProxyAddr:    s.socksProxyAddr,
+		ProxyPort:    s.socksProxyPort,
+		VideoWidth:   videoWidth,
+		VideoHeight:  videoHeight,
+		VideoFPS:     videoFPS,
+		VideoBitrate: videoBitrate,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)

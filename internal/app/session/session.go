@@ -14,6 +14,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/seichannel"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/videochannel"
 )
 
 var (
@@ -44,6 +46,10 @@ type Config struct {
 	DNSServer      string
 	SOCKSProxyAddr string
 	SOCKSProxyPort int
+	VideoWidth     int
+	VideoHeight    int
+	VideoFPS       int
+	VideoBitrate   string
 }
 
 // RegisterDefaults registers built-in providers and transports.
@@ -51,6 +57,8 @@ func RegisterDefaults() {
 	builtin.Register()
 	link.Register("direct", direct.New)
 	transport.Register("datachannel", datachannel.New)
+	transport.Register("videochannel", videochannel.New)
+	transport.Register("seichannel", seichannel.New)
 }
 
 // Validate verifies that the runtime config refers to registered components.
@@ -116,6 +124,10 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.DNSServer,
 			cfg.SOCKSProxyAddr,
 			cfg.SOCKSProxyPort,
+			cfg.VideoWidth,
+			cfg.VideoHeight,
+			cfg.VideoFPS,
+			cfg.VideoBitrate,
 		)
 	case "cnc":
 		return client.Run(
@@ -129,6 +141,10 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.DNSServer,
 			"",
 			"",
+			cfg.VideoWidth,
+			cfg.VideoHeight,
+			cfg.VideoFPS,
+			cfg.VideoBitrate,
 		)
 	default:
 		return ErrModeRequired

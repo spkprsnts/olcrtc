@@ -25,14 +25,18 @@ type Link interface {
 
 // Config holds common link configuration.
 type Config struct {
-	Transport string
-	Carrier   string
-	RoomURL   string
-	Name      string
-	OnData    func([]byte)
-	DNSServer string
-	ProxyAddr string
-	ProxyPort int
+	Transport    string
+	Carrier      string
+	RoomURL      string
+	Name         string
+	OnData       func([]byte)
+	DNSServer    string
+	ProxyAddr    string
+	ProxyPort    int
+	VideoWidth   int
+	VideoHeight  int
+	VideoFPS     int
+	VideoBitrate string
 }
 
 // Factory creates a link instance.

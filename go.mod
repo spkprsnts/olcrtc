@@ -3,10 +3,13 @@ module github.com/openlibrecommunity/olcrtc
 go 1.25.0
 
 require (
+	github.com/boombuler/barcode v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/livekit/server-sdk-go/v2 v2.16.2
 	github.com/magefile/mage v1.17.1
+	github.com/makiuchi-d/gozxing v0.1.1
+	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v4 v4.2.11
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
@@ -50,7 +53,6 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.16 // indirect
-	github.com/pion/rtp v1.10.1 // indirect
 	github.com/pion/sctp v1.9.4 // indirect
 	github.com/pion/sdp/v3 v3.0.18 // indirect
 	github.com/pion/srtp/v3 v3.0.10 // indirect
@@ -75,6 +77,7 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/grpc v1.79.1 // indirect

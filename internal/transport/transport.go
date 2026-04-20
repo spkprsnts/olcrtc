@@ -34,13 +34,17 @@ type Transport interface {
 
 // Config holds common transport configuration.
 type Config struct {
-	Carrier   string
-	RoomURL   string
-	Name      string
-	OnData    func([]byte)
-	DNSServer string
-	ProxyAddr string
-	ProxyPort int
+	Carrier      string
+	RoomURL      string
+	Name         string
+	OnData       func([]byte)
+	DNSServer    string
+	ProxyAddr    string
+	ProxyPort    int
+	VideoWidth   int
+	VideoHeight  int
+	VideoFPS     int
+	VideoBitrate string
 }
 
 // Factory creates a transport instance.

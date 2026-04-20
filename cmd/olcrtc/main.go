@@ -31,6 +31,10 @@ type config struct {
 	dnsServer      string
 	socksProxyAddr string
 	socksProxyPort int
+	videoWidth     int
+	videoHeight    int
+	videoFPS       int
+	videoBitrate   string
 }
 
 func main() {
@@ -85,7 +89,7 @@ func parseFlags() config {
 
 	flag.StringVar(&cfg.mode, "mode", "", "Mode: srv or cnc")
 	flag.StringVar(&cfg.link, "link", "direct", "Link: direct")
-	flag.StringVar(&cfg.transport, "transport", "datachannel", "Transport: datachannel")
+	flag.StringVar(&cfg.transport, "transport", "datachannel", "Transport: datachannel, videochannel, seichannel")
 	flag.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wb_stream")
 	flag.StringVar(&cfg.roomID, "id", "", "Room ID")
 	flag.StringVar(&cfg.provider, "provider", "", "Deprecated alias for -carrier")
@@ -97,6 +101,10 @@ func parseFlags() config {
 	flag.StringVar(&cfg.dnsServer, "dns", "1.1.1.1:53", "DNS server (default: Cloudflare 1.1.1.1)")
 	flag.StringVar(&cfg.socksProxyAddr, "socks-proxy", "", "SOCKS5 proxy address (server only)")
 	flag.IntVar(&cfg.socksProxyPort, "socks-proxy-port", 1080, "SOCKS5 proxy port (server only)")
+	flag.IntVar(&cfg.videoWidth, "video-w", 640, "Video logical width (videochannel only)")
+	flag.IntVar(&cfg.videoHeight, "video-h", 360, "Video logical height (videochannel only)")
+	flag.IntVar(&cfg.videoFPS, "video-fps", 25, "Video frames per second (videochannel only)")
+	flag.StringVar(&cfg.videoBitrate, "video-bitrate", "2048k", "Video bitrate (videochannel only)")
 	flag.Parse()
 
 	return cfg
@@ -144,6 +152,10 @@ func toSessionConfig(cfg config) session.Config {
 		DNSServer:      cfg.dnsServer,
 		SOCKSProxyAddr: cfg.socksProxyAddr,
 		SOCKSProxyPort: cfg.socksProxyPort,
+		VideoWidth:     cfg.videoWidth,
+		VideoHeight:    cfg.videoHeight,
+		VideoFPS:       cfg.videoFPS,
+		VideoBitrate:   cfg.videoBitrate,
 	}
 }
 

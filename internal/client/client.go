@@ -67,8 +67,12 @@ func Run(
 	dnsServer,
 	socksUser string,
 	socksPass string,
+	videoWidth int,
+	videoHeight int,
+	videoFPS int,
+	videoBitrate string,
 ) error {
-	return RunWithReady(ctx, linkName, transportName, carrierName, roomURL, keyHex, localAddr, dnsServer, socksUser, socksPass, nil)
+	return RunWithReady(ctx, linkName, transportName, carrierName, roomURL, keyHex, localAddr, dnsServer, socksUser, socksPass, nil, videoWidth, videoHeight, videoFPS, videoBitrate)
 }
 
 // RunWithReady is like Run but accepts a callback that is called when the client is ready.
@@ -84,6 +88,10 @@ func RunWithReady(
 	_ string,
 	_ string,
 	onReady func(),
+	videoWidth int,
+	videoHeight int,
+	videoFPS int,
+	videoBitrate string,
 ) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -111,7 +119,7 @@ func RunWithReady(
 
 	const linkCount = 1
 	for i := range linkCount {
-		if err := c.addLink(runCtx, linkName, transportName, carrierName, roomURL, i, cancel, dnsServer, "", 0); err != nil {
+		if err := c.addLink(runCtx, linkName, transportName, carrierName, roomURL, i, cancel, dnsServer, "", 0, videoWidth, videoHeight, videoFPS, videoBitrate); err != nil {
 			return fmt.Errorf("addLink failed: %w", err)
 		}
 	}
@@ -198,16 +206,22 @@ func (c *Client) addLink(
 	dnsServer,
 	socksProxyAddr string,
 	socksProxyPort int,
+	videoWidth, videoHeight, videoFPS int,
+	videoBitrate string,
 ) error {
 	ln, err := link.New(ctx, linkName, link.Config{
-		Transport: transportName,
-		Carrier:   carrierName,
-		RoomURL:   roomURL,
-		Name:      names.Generate(),
-		OnData:    c.onData,
-		DNSServer: dnsServer,
-		ProxyAddr: socksProxyAddr,
-		ProxyPort: socksProxyPort,
+		Transport:    transportName,
+		Carrier:      carrierName,
+		RoomURL:      roomURL,
+		Name:         names.Generate(),
+		OnData:       c.onData,
+		DNSServer:    dnsServer,
+		ProxyAddr:    socksProxyAddr,
+		ProxyPort:    socksProxyPort,
+		VideoWidth:   videoWidth,
+		VideoHeight:  videoHeight,
+		VideoFPS:     videoFPS,
+		VideoBitrate: videoBitrate,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create link: %w", err)
@@ -235,10 +249,7 @@ func (c *Client) addLink(
 		ln.WatchConnection(ctx)
 	}()
 
-	// Send initial reset to clean up any stale connections for this clientID on server
-	if err := c.mux.SendClientReset(); err != nil {
-		logger.Warnf("Failed to send initial client reset: %v", err)
-	}
+	c.sendClientResetAsync("initial")
 
 	return nil
 }
@@ -268,9 +279,17 @@ func (c *Client) handleLinkReconnect(linkID int) {
 	})
 	c.mux.Reset()
 
-	if err := c.mux.SendClientReset(); err != nil {
-		logger.Warnf("Failed to send client reset after reconnect: %v", err)
-	}
+	c.sendClientResetAsync("reconnect")
+}
+
+func (c *Client) sendClientResetAsync(source string) {
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		if err := c.mux.SendClientReset(); err != nil {
+			logger.Warnf("Failed to send client reset after %s: %v", source, err)
+		}
+	}()
 }
 
 func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) {

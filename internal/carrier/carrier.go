@@ -13,7 +13,7 @@ var (
 	ErrCarrierNotFound = errors.New("carrier not found")
 	// ErrByteStreamUnsupported is returned when a carrier cannot provide a byte stream.
 	ErrByteStreamUnsupported = errors.New("carrier does not support byte stream")
-	// ErrVideoTrackUnsupported is returned when a carrier cannot publish video tracks.
+	// ErrVideoTrackUnsupported is returned when a carrier cannot exchange video tracks.
 	ErrVideoTrackUnsupported = errors.New("carrier does not support video tracks")
 )
 
@@ -33,7 +33,7 @@ type ByteStreamCapable interface {
 	OpenByteStream() (ByteStream, error)
 }
 
-// VideoTrackCapable is implemented by carriers that can publish video tracks.
+// VideoTrackCapable is implemented by carriers that can exchange video tracks.
 type VideoTrackCapable interface {
 	OpenVideoTrack() (VideoTrack, error)
 }

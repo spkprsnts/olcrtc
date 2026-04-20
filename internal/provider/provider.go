@@ -37,9 +37,10 @@ type Provider interface {
 	GetBufferedAmount() uint64
 }
 
-// VideoTrackCapable is implemented by providers that can publish video tracks.
+// VideoTrackCapable is implemented by providers that can exchange video tracks.
 type VideoTrackCapable interface {
-	AddVideoTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error)
+	AddVideoTrack(track webrtc.TrackLocal) error
+	SetVideoTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
 }
 
 // Config holds common configuration for all providers.

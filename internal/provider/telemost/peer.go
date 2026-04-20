@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -81,6 +82,13 @@ type Peer struct {
 	onEnded         func(string)
 	trafficShape    TrafficShape
 	sessionCloseCh  chan struct{}
+	videoTrackMu    sync.RWMutex
+	videoTracks     []webrtc.TrackLocal
+	onVideoTrack    func(*webrtc.TrackRemote, *webrtc.RTPReceiver)
+	subscriberReady atomic.Bool
+	publisherReady  atomic.Bool
+	subscriberConn  chan struct{}
+	publisherConn   chan struct{}
 	wg              sync.WaitGroup
 }
 
@@ -132,6 +140,8 @@ func NewPeer(ctx context.Context, roomURL, name string, onData func([]byte)) (*P
 		telemetryCh:    make(chan struct{}, 1),
 		sendQueue:      make(chan []byte, 5000),
 		ackWaiters:     make(map[string]chan struct{}),
+		subscriberConn: make(chan struct{}),
+		publisherConn:  make(chan struct{}),
 		trafficShape: TrafficShape{
 			MaxMessageSize: realDataChannelMessageLimit,
 			MinDelay:       defaultSendDelayLow,
@@ -182,6 +192,38 @@ func (p *Peer) resetSession() (chan struct{}, chan struct{}) {
 	return p.keepAliveCh, p.sessionCloseCh
 }
 
+func (p *Peer) resetMediaState() {
+	p.subscriberReady.Store(false)
+	p.publisherReady.Store(false)
+	p.subscriberConn = make(chan struct{})
+	p.publisherConn = make(chan struct{})
+}
+
+func (p *Peer) hasLocalVideoTracks() bool {
+	p.videoTrackMu.RLock()
+	defer p.videoTrackMu.RUnlock()
+	return len(p.videoTracks) > 0
+}
+
+func (p *Peer) videoTrackHandler() func(*webrtc.TrackRemote, *webrtc.RTPReceiver) {
+	p.videoTrackMu.RLock()
+	defer p.videoTrackMu.RUnlock()
+	return p.onVideoTrack
+}
+
+func (p *Peer) attachPendingVideoTracks() error {
+	p.videoTrackMu.RLock()
+	defer p.videoTrackMu.RUnlock()
+
+	for _, track := range p.videoTracks {
+		if _, err := p.pcPub.AddTrack(track); err != nil {
+			return fmt.Errorf("add video track: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (p *Peer) drainReconnectQueue() {
 	for {
 		select {
@@ -195,6 +237,7 @@ func (p *Peer) drainReconnectQueue() {
 // Connect starts the WebRTC connection process.
 func (p *Peer) Connect(ctx context.Context) error {
 	p.closed.Store(false)
+	p.resetMediaState()
 
 	config := webrtc.Configuration{
 		ICEServers:   []webrtc.ICEServer{{URLs: []string{"stun:stun.rtc.yandex.net:3478"}}},
@@ -205,15 +248,18 @@ func (p *Peer) Connect(ctx context.Context) error {
 		return err
 	}
 
-	var err error
-	p.dc, err = p.pcPub.CreateDataChannel("olcrtc", nil)
-	if err != nil {
-		return fmt.Errorf("create dc: %w", err)
-	}
-
-	dcReady := make(chan struct{})
 	keepAliveCh, sessionCloseCh := p.resetSession()
-	p.setupDataChannelHandlers(dcReady, sessionCloseCh)
+	var dcReady chan struct{}
+	if p.onData != nil {
+		var err error
+		p.dc, err = p.pcPub.CreateDataChannel("olcrtc", nil)
+		if err != nil {
+			return fmt.Errorf("create dc: %w", err)
+		}
+
+		dcReady = make(chan struct{})
+		p.setupDataChannelHandlers(dcReady, sessionCloseCh)
+	}
 
 	if err := p.dialWebSocket(); err != nil {
 		return err
@@ -222,14 +268,33 @@ func (p *Peer) Connect(ctx context.Context) error {
 	p.setupICEHandlers()
 	p.startBackgroundGoroutines(ctx, keepAliveCh)
 
+	if p.onData != nil {
+		select {
+		case <-dcReady:
+			return nil
+		case <-time.After(15 * time.Second):
+			return ErrDataChannelTimeout
+		case <-ctx.Done():
+			return fmt.Errorf("connect context cancelled: %w", ctx.Err())
+		}
+	}
+
+	return p.waitForMediaReady(ctx, 20*time.Second)
+}
+
+func (p *Peer) waitForMediaReady(ctx context.Context, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
-	case <-dcReady:
-		return nil
-	case <-time.After(15 * time.Second):
-		return ErrDataChannelTimeout
+	case <-p.subscriberConn:
+	case <-timer.C:
+		return fmt.Errorf("subscriber media timeout")
 	case <-ctx.Done():
 		return fmt.Errorf("connect context cancelled: %w", ctx.Err())
 	}
+
+	return nil
 }
 
 func (p *Peer) setupPeerConnections(config webrtc.Configuration) error {
@@ -244,13 +309,28 @@ func (p *Peer) setupPeerConnections(config webrtc.Configuration) error {
 	if err != nil {
 		return fmt.Errorf("new sub pc: %w", err)
 	}
-	p.pcSub.OnConnectionStateChange(p.onConnectionStateChange)
+	p.pcSub.OnConnectionStateChange(p.onSubscriberConnectionStateChange)
+	p.pcSub.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		if track.Kind() != webrtc.RTPCodecTypeVideo {
+			return
+		}
+
+		logger.Infof("telemost remote video track: codec=%s stream=%s track=%s", track.Codec().MimeType, track.StreamID(), track.ID())
+
+		if cb := p.videoTrackHandler(); cb != nil {
+			cb(track, receiver)
+		}
+	})
 
 	p.pcPub, err = api.NewPeerConnection(config)
 	if err != nil {
 		return fmt.Errorf("new pub pc: %w", err)
 	}
-	p.pcPub.OnConnectionStateChange(p.onConnectionStateChange)
+	p.pcPub.OnConnectionStateChange(p.onPublisherConnectionStateChange)
+
+	if err := p.attachPendingVideoTracks(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -260,6 +340,34 @@ func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
 		state == webrtc.PeerConnectionStateDisconnected) {
 		p.queueReconnect()
 	}
+}
+
+func (p *Peer) onSubscriberConnectionStateChange(state webrtc.PeerConnectionState) {
+	logger.Debugf("telemost subscriber state: %s", state.String())
+	if state == webrtc.PeerConnectionStateConnected {
+		p.subscriberReady.Store(true)
+		closeSignal(p.subscriberConn)
+	} else if state == webrtc.PeerConnectionStateDisconnected ||
+		state == webrtc.PeerConnectionStateFailed ||
+		state == webrtc.PeerConnectionStateClosed {
+		p.subscriberReady.Store(false)
+	}
+
+	p.onConnectionStateChange(state)
+}
+
+func (p *Peer) onPublisherConnectionStateChange(state webrtc.PeerConnectionState) {
+	logger.Debugf("telemost publisher state: %s", state.String())
+	if state == webrtc.PeerConnectionStateConnected {
+		p.publisherReady.Store(true)
+		closeSignal(p.publisherConn)
+	} else if state == webrtc.PeerConnectionStateDisconnected ||
+		state == webrtc.PeerConnectionStateFailed ||
+		state == webrtc.PeerConnectionStateClosed {
+		p.publisherReady.Store(false)
+	}
+
+	p.onConnectionStateChange(state)
 }
 
 func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}, sessionCloseCh chan struct{}) {
@@ -284,7 +392,9 @@ func (p *Peer) setupDataChannelHandlers(dcReady chan struct{}, sessionCloseCh ch
 	p.dc.OnMessage(p.onDataChannelMessage)
 
 	p.pcSub.OnDataChannel(func(dc *webrtc.DataChannel) {
-		dc.OnMessage(p.onDataChannelMessage)
+		if p.onData != nil {
+			dc.OnMessage(p.onDataChannelMessage)
+		}
 	})
 }
 
@@ -361,38 +471,35 @@ func (p *Peer) sendHello() error {
 		"uid": uuid.New().String(),
 		"hello": map[string]interface{}{
 			"participantMeta": map[string]interface{}{
-				"name":      p.name,
-				"role":      "SPEAKER",
-				"sendAudio": false,
-				"sendVideo": false,
+				"name":        p.name,
+				"role":        "SPEAKER",
+				"description": "",
+				"sendAudio":   false,
+				"sendVideo":   p.hasLocalVideoTracks(),
 			},
 			"participantAttributes": map[string]interface{}{
-				"name": p.name,
-				"role": "SPEAKER",
+				"name":        p.name,
+				"role":        "SPEAKER",
+				"description": "",
 			},
-			"sendAudio":     false,
-			"sendVideo":     false,
-			"sendSharing":   false,
-			"participantId": p.conn.PeerID,
-			"roomId":        p.conn.RoomID,
-			"serviceName":   "telemost",
-			"credentials":   p.conn.Credentials,
-			"capabilitiesOffer": map[string]interface{}{
-				"offerAnswerMode":        []string{"SEPARATE"},
-				"initialSubscriberOffer": []string{"ON_HELLO"},
-				"slotsMode":              []string{"FROM_CONTROLLER"},
-				"simulcastMode":          []string{"DISABLED"},
-				"selfVadStatus":          []string{"FROM_SERVER"},
-				"dataChannelSharing":     []string{"TO_RTP"},
-			},
+			"sendAudio":         false,
+			"sendVideo":         p.hasLocalVideoTracks(),
+			"sendSharing":       false,
+			"participantId":     p.conn.PeerID,
+			"roomId":            p.conn.RoomID,
+			"serviceName":       "telemost",
+			"credentials":       p.conn.Credentials,
+			"capabilitiesOffer": telemostCapabilitiesOffer(),
 			"sdkInfo": map[string]interface{}{
-				"implementation": "go",
-				"version":        "1.0.0",
-				"userAgent":      "OlcRTC-" + p.name,
+				"implementation": "browser",
+				"version":        "5.27.0",
+				"userAgent":      "Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0",
+				"hwConcurrency":  runtime.NumCPU(),
 			},
-			"sdkInitializationId": uuid.New().String(),
-			"disablePublisher":    false,
-			"disableSubscriber":   false,
+			"sdkInitializationId":    uuid.New().String(),
+			"disablePublisher":       !p.hasLocalVideoTracks(),
+			"disableSubscriber":      false,
+			"disableSubscriberAudio": true,
 		},
 	}
 
@@ -445,6 +552,7 @@ func (p *Peer) handleMessageEvents(ctx context.Context, msg map[string]interface
 	}
 
 	if serverHello, ok := msg["serverHello"].(map[string]interface{}); ok {
+		p.applyServerHelloConfig(serverHello)
 		p.startTelemetry(ctx, serverHello)
 		p.sendAck(uid)
 	}
@@ -516,6 +624,13 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string) error {
 	p.wsMu.Unlock()
 
 	p.sendAck(uid)
+
+	if p.onData == nil {
+		if err := p.sendSetSlots(); err != nil {
+			logger.Debugf("setSlots error: %v", err)
+		}
+	}
+
 	time.Sleep(300 * time.Millisecond)
 
 	pubOffer, err := p.pcPub.CreateOffer(nil)
@@ -531,12 +646,198 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string) error {
 	_ = p.ws.WriteJSON(map[string]interface{}{
 		"uid": uuid.New().String(),
 		"publisherSdpOffer": map[string]interface{}{
-			"pcSeq": 1,
-			"sdp":   pubOffer.SDP,
+			"pcSeq":  1,
+			"sdp":    pubOffer.SDP,
+			"tracks": p.publisherTrackDescriptions(),
 		},
 	})
 	p.wsMu.Unlock()
 	return nil
+}
+
+func (p *Peer) sendSetSlots() error {
+	p.wsMu.Lock()
+	defer p.wsMu.Unlock()
+
+	return p.ws.WriteJSON(map[string]interface{}{
+		"uid": uuid.New().String(),
+		"setSlots": map[string]interface{}{
+			"slots": []map[string]int{
+				{"width": 1280, "height": 720},
+				{"width": 640, "height": 360},
+			},
+			"audioSlotsCount":    0,
+			"key":                1,
+			"shutdownAllVideo":   nil,
+			"withSelfView":       false,
+			"selfViewVisibility": "ON_LOADING_THEN_SHOW",
+			"gridConfig":         map[string]interface{}{},
+		},
+	})
+}
+
+func (p *Peer) applyServerHelloConfig(serverHello map[string]interface{}) {
+	rawCfg, ok := serverHello["rtcConfiguration"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	rawServers, ok := rawCfg["iceServers"].([]interface{})
+	if !ok || len(rawServers) == 0 {
+		return
+	}
+
+	iceServers := make([]webrtc.ICEServer, 0, len(rawServers))
+	for _, rawServer := range rawServers {
+		server, ok := rawServer.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		var urls []string
+		switch rawURLs := server["urls"].(type) {
+		case []interface{}:
+			for _, rawURL := range rawURLs {
+				if url, ok := rawURL.(string); ok && url != "" {
+					urls = append(urls, url)
+				}
+			}
+		case []string:
+			urls = append(urls, rawURLs...)
+		}
+
+		if len(urls) == 0 {
+			continue
+		}
+
+		ice := webrtc.ICEServer{URLs: urls}
+		if username, ok := server["username"].(string); ok {
+			ice.Username = username
+		}
+		if credential, ok := server["credential"].(string); ok {
+			ice.Credential = credential
+		}
+		iceServers = append(iceServers, ice)
+	}
+
+	if len(iceServers) == 0 {
+		return
+	}
+
+	cfg := webrtc.Configuration{
+		ICEServers:   iceServers,
+		SDPSemantics: webrtc.SDPSemanticsUnifiedPlan,
+	}
+
+	if p.pcSub != nil {
+		_ = p.pcSub.SetConfiguration(cfg)
+	}
+	if p.pcPub != nil {
+		_ = p.pcPub.SetConfiguration(cfg)
+	}
+}
+
+func (p *Peer) publisherTrackDescriptions() []map[string]interface{} {
+	if p.pcPub == nil {
+		return nil
+	}
+
+	tracks := make([]map[string]interface{}, 0)
+	for _, transceiver := range p.pcPub.GetTransceivers() {
+		sender := transceiver.Sender()
+		if sender == nil {
+			continue
+		}
+
+		track := sender.Track()
+		if track == nil {
+			continue
+		}
+
+		kind := "VIDEO"
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			kind = "AUDIO"
+		}
+
+		tracks = append(tracks, map[string]interface{}{
+			"mid":            transceiver.Mid(),
+			"transceiverMid": transceiver.Mid(),
+			"kind":           kind,
+			"priority":       0,
+			"label":          track.ID(),
+			"codecs":         map[string]interface{}{},
+			"groupId":        1,
+			"description":    "",
+		})
+	}
+
+	return tracks
+}
+
+func telemostCapabilitiesOffer() map[string]interface{} {
+	return map[string]interface{}{
+		"offerAnswerMode":        []string{"SEPARATE"},
+		"initialSubscriberOffer": []string{"ON_HELLO"},
+		"slotsMode":              []string{"FROM_CONTROLLER"},
+		"simulcastMode":          []string{"DISABLED", "STATIC"},
+		"selfVadStatus":          []string{"FROM_SERVER", "FROM_CLIENT"},
+		"dataChannelSharing":     []string{"TO_RTP"},
+		"videoEncoderConfig":     []string{"NO_CONFIG", "ONLY_INIT_CONFIG", "RUNTIME_CONFIG"},
+		"dataChannelVideoCodec":  []string{"VP8", "UNIQUE_CODEC_FROM_TRACK_DESCRIPTION"},
+		"bandwidthLimitationReason": []string{
+			"BANDWIDTH_REASON_DISABLED",
+			"BANDWIDTH_REASON_ENABLED",
+		},
+		"sdkDefaultDeviceManagement": []string{
+			"SDK_DEFAULT_DEVICE_MANAGEMENT_DISABLED",
+			"SDK_DEFAULT_DEVICE_MANAGEMENT_ENABLED",
+		},
+		"joinOrderLayout": []string{"JOIN_ORDER_LAYOUT_DISABLED", "JOIN_ORDER_LAYOUT_ENABLED"},
+		"pinLayout":       []string{"PIN_LAYOUT_DISABLED"},
+		"sendSelfViewVideoSlot": []string{
+			"SEND_SELF_VIEW_VIDEO_SLOT_DISABLED",
+			"SEND_SELF_VIEW_VIDEO_SLOT_ENABLED",
+		},
+		"serverLayoutTransition": []string{"SERVER_LAYOUT_TRANSITION_DISABLED"},
+		"sdkPublisherOptimizeBitrate": []string{
+			"SDK_PUBLISHER_OPTIMIZE_BITRATE_DISABLED",
+			"SDK_PUBLISHER_OPTIMIZE_BITRATE_FULL",
+			"SDK_PUBLISHER_OPTIMIZE_BITRATE_ONLY_SELF",
+		},
+		"sdkNetworkLostDetection": []string{"SDK_NETWORK_LOST_DETECTION_DISABLED"},
+		"sdkNetworkPathMonitor":   []string{"SDK_NETWORK_PATH_MONITOR_DISABLED"},
+		"publisherVp9":            []string{"PUBLISH_VP9_DISABLED", "PUBLISH_VP9_ENABLED"},
+		"svcMode":                 []string{"SVC_MODE_DISABLED", "SVC_MODE_L3T3", "SVC_MODE_L3T3_KEY"},
+		"subscriberOfferAsyncAck": []string{"SUBSCRIBER_OFFER_ASYNC_ACK_DISABLED", "SUBSCRIBER_OFFER_ASYNC_ACK_ENABLED"},
+		"androidBluetoothRoutingFix": []string{
+			"ANDROID_BLUETOOTH_ROUTING_FIX_DISABLED",
+		},
+		"fixedIceCandidatesPoolSize": []string{
+			"FIXED_ICE_CANDIDATES_POOL_SIZE_DISABLED",
+		},
+		"sdkAndroidTelecomIntegration": []string{
+			"SDK_ANDROID_TELECOM_INTEGRATION_DISABLED",
+		},
+		"setActiveCodecsMode": []string{
+			"SET_ACTIVE_CODECS_MODE_DISABLED",
+			"SET_ACTIVE_CODECS_MODE_VIDEO_ONLY",
+		},
+		"subscriberDtlsPassiveMode": []string{
+			"SUBSCRIBER_DTLS_PASSIVE_MODE_DISABLED",
+		},
+		"publisherOpusDred": []string{
+			"PUBLISHER_OPUS_DRED_DISABLED",
+		},
+		"publisherOpusLowBitrate": []string{
+			"PUBLISHER_OPUS_LOW_BITRATE_DISABLED",
+		},
+		"sdkAndroidDestroySessionOnTaskRemoved": []string{
+			"SDK_ANDROID_DESTROY_SESSION_ON_TASK_REMOVED_DISABLED",
+		},
+		"svcModes":                []string{"FALSE"},
+		"reportTelemetryModes":    []string{"TRUE"},
+		"keepDefaultDevicesModes": []string{"FALSE"},
+	}
 }
 
 func (p *Peer) handleSdpAnswer(answer map[string]interface{}, uid string) {
@@ -1155,6 +1456,12 @@ func (p *Peer) monitorQueue(sessionCloseCh <-chan struct{}) {
 
 // CanSend checks if data can be sent.
 func (p *Peer) CanSend() bool {
+	if p.onData == nil {
+		if p.hasLocalVideoTracks() {
+			return !p.closed.Load() && p.subscriberReady.Load() && p.publisherReady.Load()
+		}
+		return !p.closed.Load() && p.subscriberReady.Load()
+	}
 	if p.dc == nil || p.dc.ReadyState() != webrtc.DataChannelStateOpen {
 		return false
 	}
@@ -1162,18 +1469,28 @@ func (p *Peer) CanSend() bool {
 }
 
 var (
-	 // ErrPublisherNotInitialized is returned when the publisher peer connection is not set up.
+	// ErrPublisherNotInitialized is returned when the publisher peer connection is not set up.
 	ErrPublisherNotInitialized = errors.New("publisher peer connection not initialized")
 )
 
 // AddVideoTrack adds a video track to the publisher peer connection.
-func (p *Peer) AddVideoTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+func (p *Peer) AddVideoTrack(track webrtc.TrackLocal) error {
+	p.videoTrackMu.Lock()
+	p.videoTracks = append(p.videoTracks, track)
+	p.videoTrackMu.Unlock()
+
 	if p.pcPub == nil {
-		return nil, ErrPublisherNotInitialized
+		return nil
 	}
-	sender, err := p.pcPub.AddTrack(track)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add track: %w", err)
+	if _, err := p.pcPub.AddTrack(track); err != nil {
+		return fmt.Errorf("failed to add track: %w", err)
 	}
-	return sender, nil
+	return nil
+}
+
+// SetVideoTrackHandler registers a callback for remote video tracks.
+func (p *Peer) SetVideoTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
+	p.videoTrackMu.Lock()
+	defer p.videoTrackMu.Unlock()
+	p.onVideoTrack = cb
 }

@@ -19,9 +19,17 @@ type ByteStream interface {
 	CanSend() bool
 }
 
-// VideoTrack is a carrier capability for publishing a local video track.
+// VideoTrack is a carrier capability for bidirectional video transport.
 type VideoTrack interface {
-	AddTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error)
+	Connect(ctx context.Context) error
+	Close() error
+	SetReconnectCallback(cb func())
+	SetShouldReconnect(fn func() bool)
+	SetEndedCallback(cb func(string))
+	WatchConnection(ctx context.Context)
+	CanSend() bool
+	AddTrack(track webrtc.TrackLocal) error
+	SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
 }
 
 type legacySession struct {
@@ -76,6 +84,30 @@ type legacyVideoTrack struct {
 	provider provider.VideoTrackCapable
 }
 
-func (v *legacyVideoTrack) AddTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+func (v *legacyVideoTrack) Connect(ctx context.Context) error {
+	return v.provider.(provider.Provider).Connect(ctx)
+}
+func (v *legacyVideoTrack) Close() error { return v.provider.(provider.Provider).Close() }
+func (v *legacyVideoTrack) SetShouldReconnect(fn func() bool) {
+	v.provider.(provider.Provider).SetShouldReconnect(fn)
+}
+func (v *legacyVideoTrack) SetEndedCallback(cb func(string)) {
+	v.provider.(provider.Provider).SetEndedCallback(cb)
+}
+func (v *legacyVideoTrack) WatchConnection(ctx context.Context) {
+	v.provider.(provider.Provider).WatchConnection(ctx)
+}
+func (v *legacyVideoTrack) CanSend() bool { return v.provider.(provider.Provider).CanSend() }
+func (v *legacyVideoTrack) AddTrack(track webrtc.TrackLocal) error {
 	return v.provider.AddVideoTrack(track)
+}
+func (v *legacyVideoTrack) SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
+	v.provider.SetVideoTrackHandler(cb)
+}
+func (v *legacyVideoTrack) SetReconnectCallback(cb func()) {
+	v.provider.(provider.Provider).SetReconnectCallback(func(_ *webrtc.DataChannel) {
+		if cb != nil {
+			cb()
+		}
+	})
 }
