@@ -16,7 +16,7 @@ Project that allows users to bypass blocking by parasitizing and tunneling on un
 
 ## satus
 
-pre-alpha
+alpha
 <br>
 see all info in [issues](https://github.com/openlibrecommunity/olcrtc/issues)
 <br>
