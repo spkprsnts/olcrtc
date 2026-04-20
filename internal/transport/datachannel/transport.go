@@ -9,6 +9,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
+const defaultMaxPayloadSize = 12 * 1024
+
 type streamTransport struct {
 	stream carrier.ByteStream
 }
@@ -78,4 +80,14 @@ func (p *streamTransport) WatchConnection(ctx context.Context) {
 // CanSend reports whether transport is ready for sending.
 func (p *streamTransport) CanSend() bool {
 	return p.stream.CanSend()
+}
+
+// Features describes the current datachannel transport semantics.
+func (p *streamTransport) Features() transport.Features {
+	return transport.Features{
+		Reliable:        true,
+		Ordered:         true,
+		MessageOriented: true,
+		MaxPayloadSize:  defaultMaxPayloadSize,
+	}
 }
