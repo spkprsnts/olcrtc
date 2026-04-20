@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -46,7 +45,7 @@ var (
 
 func main() {
 	if err := run(); err != nil {
-		log.Print(err)
+		logger.Error(err)
 		os.Exit(1)
 	}
 }
@@ -83,7 +82,7 @@ func run() error {
 
 	select {
 	case <-sigCh:
-		log.Println("Shutting down gracefully...")
+		logger.Info("Shutting down gracefully...")
 		cancel()
 		return waitForShutdown(errCh)
 	case err := <-errCh:
@@ -112,12 +111,8 @@ func parseFlags() config {
 
 func configureLogging(debug bool) {
 	if debug {
-		log.SetFlags(log.Ltime | log.Lshortfile)
 		logger.SetVerbose(true)
-		return
 	}
-
-	log.SetFlags(log.Ltime)
 }
 
 func validateConfig(cfg config) error {
@@ -135,7 +130,7 @@ func validateConfig(cfg config) error {
 		return errProviderRequired
 	case !validProvider:
 		return fmt.Errorf("%w: %s (available: %v)", errUnsupportedProvider, cfg.provider, available)
-	case cfg.roomID == "":
+	case cfg.roomID == "" && cfg.provider != "jazz":
 		return errRoomIDRequired
 	case cfg.mode != "srv" && cfg.mode != "cnc":
 		return errModeRequired
@@ -187,10 +182,10 @@ func runMode(ctx context.Context, cfg config, errCh chan<- error) {
 			cfg.provider,
 			roomURL,
 			cfg.keyHex,
-			cfg.socksPort,
-			cfg.socksHost,
+			fmt.Sprintf("%s:%d", cfg.socksHost, cfg.socksPort),
+			cfg.dnsServer,
 			"",
-			"",
+			0,
 		)
 	}
 }
@@ -220,11 +215,11 @@ func waitForShutdown(errCh <-chan error) error {
 	select {
 	case err := <-done:
 		if err == nil {
-			log.Println("Shutdown complete")
+			logger.Info("Shutdown complete")
 		}
 		return err
 	case <-time.After(5 * time.Second):
-		log.Println("Shutdown timeout, forcing exit")
+		logger.Warn("Shutdown timeout, forcing exit")
 		return nil
 	}
 }
