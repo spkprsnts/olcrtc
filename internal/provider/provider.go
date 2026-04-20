@@ -9,14 +9,21 @@ import (
 )
 
 var (
-	ErrProviderNotFound    = errors.New("provider not found")
-	ErrDataChannelTimeout  = errors.New("datachannel timeout")
+	// ErrProviderNotFound is returned when a requested provider is not registered.
+	ErrProviderNotFound = errors.New("provider not found")
+	// ErrDataChannelTimeout is returned when the DataChannel fails to open within the timeout period.
+	ErrDataChannelTimeout = errors.New("datachannel timeout")
+	// ErrDataChannelNotReady is returned when attempting to send data before the DataChannel is open.
 	ErrDataChannelNotReady = errors.New("datachannel not ready")
-	ErrSendQueueClosed     = errors.New("send queue closed")
-	ErrSendQueueTimeout    = errors.New("send queue timeout")
+	// ErrSendQueueClosed is returned when attempting to send data after the send queue has been closed.
+	ErrSendQueueClosed = errors.New("send queue closed")
+	// ErrSendQueueTimeout is returned when the send queue is full and the timeout is reached.
+	ErrSendQueueTimeout = errors.New("send queue timeout")
 )
 
 // Provider defines the standard interface for WebRTC connection handlers.
+//
+//nolint:interfacebloat // All methods are necessary for provider abstraction.
 type Provider interface {
 	Connect(ctx context.Context) error
 	Send(data []byte) error
@@ -47,6 +54,8 @@ type Config struct {
 type Factory func(ctx context.Context, cfg Config) (Provider, error)
 
 // registry holds all registered provider factories.
+//
+//nolint:gochecknoglobals // Global registry is required for provider discovery.
 var registry = make(map[string]Factory)
 
 // Register adds a new provider factory to the registry.

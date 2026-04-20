@@ -185,7 +185,7 @@ func runMode(ctx context.Context, cfg config, errCh chan<- error) {
 			fmt.Sprintf("%s:%d", cfg.socksHost, cfg.socksPort),
 			cfg.dnsServer,
 			"",
-			0,
+			"",
 		)
 	}
 }

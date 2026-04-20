@@ -24,11 +24,22 @@ import (
 )
 
 var (
-	ErrKeySize         = errors.New("key must be 32 bytes")
+	// ErrKeySize is returned when the key size is not 32 bytes.
+	ErrKeySize = errors.New("key must be 32 bytes")
+	// ErrKeyStringLength is returned when the key string length is not 32.
 	ErrKeyStringLength = errors.New("key string length must be 32")
-	ErrInvalidSocks5   = errors.New("invalid SOCKS5 version")
-	ErrNoPeers         = errors.New("no peers available")
-	ErrEncryptFailed   = errors.New("encrypt failed")
+	// ErrInvalidSocks5 is returned when the SOCKS version is not 5.
+	ErrInvalidSocks5 = errors.New("invalid SOCKS5 version")
+	// ErrNoPeers is returned when no peers are available for sending.
+	ErrNoPeers = errors.New("no peers available")
+	// ErrEncryptFailed is returned when encryption fails.
+	ErrEncryptFailed = errors.New("encrypt failed")
+	// ErrUnsupportedSocksCommand is returned when a SOCKS5 command is not supported.
+	ErrUnsupportedSocksCommand = errors.New("unsupported SOCKS5 command")
+	// ErrUnsupportedAddressType is returned when a SOCKS5 address type is not supported.
+	ErrUnsupportedAddressType = errors.New("unsupported address type")
+	// ErrTunnelSetupFailed is returned when the tunnel cannot be established.
+	ErrTunnelSetupFailed = errors.New("tunnel setup failed")
 )
 
 // Client handles local SOCKS5 connections and tunnels them via WebRTC.
@@ -53,8 +64,23 @@ func Run(
 	keyHex string,
 	localAddr string,
 	dnsServer,
-	socksProxyAddr string,
-	socksProxyPort int,
+	socksUser string,
+	socksPass string,
+) error {
+	return RunWithReady(ctx, providerName, roomURL, keyHex, localAddr, dnsServer, socksUser, socksPass, nil)
+}
+
+// RunWithReady is like Run but accepts a callback that is called when the client is ready.
+func RunWithReady(
+	ctx context.Context,
+	providerName,
+	roomURL,
+	keyHex string,
+	localAddr string,
+	dnsServer,
+	_ string,
+	_ string,
+	onReady func(),
 ) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -82,18 +108,23 @@ func Run(
 
 	const peerCount = 1
 	for i := range peerCount {
-		if err := c.addPeer(runCtx, providerName, roomURL, i, cancel, dnsServer, socksProxyAddr, socksProxyPort); err != nil {
+		if err := c.addPeer(runCtx, providerName, roomURL, i, cancel, dnsServer, "", 0); err != nil {
 			return fmt.Errorf("addPeer failed: %w", err)
 		}
 	}
 
-	ln, err := net.Listen("tcp", localAddr)
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(runCtx, "tcp", localAddr)
 	if err != nil {
 		return fmt.Errorf("listen failed: %w", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	logger.Infof("SOCKS5 server listening on %s (ClientID: %d)", localAddr, clientID)
+
+	if onReady != nil {
+		onReady()
+	}
 
 	go c.acceptLoop(runCtx, ln)
 
@@ -254,7 +285,7 @@ func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) {
 }
 
 func (c *Client) handleSOCKS5(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := c.socks5Handshake(conn); err != nil {
 		logger.Debugf("SOCKS5 handshake failed: %v", err)
@@ -274,16 +305,25 @@ func (c *Client) handleSOCKS5(ctx context.Context, conn net.Conn) {
 
 	logger.Infof("sid=%d tunnel to %s:%d", sid, addr, port)
 
-	req := map[string]any{
-		"cmd":  "connect",
-		"addr": addr,
-		"port": port,
+	if err := c.setupTunnel(ctx, sid, conn, addr, port); err != nil {
+		logger.Warnf("sid=%d tunnel setup failed: %v", sid, err)
+		return
 	}
-	reqData, _ := json.Marshal(req)
+
+	c.activeClients.Add(1)
+	c.startStreamPump(ctx, sid, conn)
+	c.pumpToMux(sid, conn)
+}
+
+func (c *Client) setupTunnel(ctx context.Context, sid uint16, conn net.Conn, addr string, port int) error {
+	req := map[string]any{"cmd": "connect", "addr": addr, "port": port}
+	reqData, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal connect: %w", err)
+	}
 
 	if err := c.mux.SendData(sid, reqData); err != nil {
-		logger.Warnf("sid=%d send connect failed: %v", sid, err)
-		return
+		return fmt.Errorf("send connect: %w", err)
 	}
 
 	dataReady := c.mux.WaitForData(sid)
@@ -292,30 +332,27 @@ func (c *Client) handleSOCKS5(ctx context.Context, conn net.Conn) {
 		resp := c.mux.ReadStream(sid)
 		if len(resp) > 0 && resp[0] == 0x00 {
 			if _, err := conn.Write(replySuccess()); err != nil {
-				return
+				return fmt.Errorf("write success: %w", err)
 			}
 		} else {
 			_, _ = conn.Write(replyHostUnreachable())
-			return
+			return ErrTunnelSetupFailed
 		}
 	case <-time.After(15 * time.Second):
 		_, _ = conn.Write(replyHostUnreachable())
 		c.mux.CleanupDataChannel(sid)
-		return
+		return fmt.Errorf("%w: timeout", ErrTunnelSetupFailed)
 	case <-ctx.Done():
-		return
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
 	}
 	c.mux.CleanupDataChannel(sid)
-
-	c.activeClients.Add(1)
-	c.startStreamPump(ctx, sid, conn)
-	c.pumpToMux(sid, conn)
+	return nil
 }
 
 func (c *Client) socks5Handshake(conn net.Conn) error {
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return err
+		return fmt.Errorf("read header: %w", err)
 	}
 
 	if buf[0] != 5 {
@@ -324,58 +361,66 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 
 	methods := make([]byte, int(buf[1]))
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		return err
+		return fmt.Errorf("read methods: %w", err)
 	}
 
-	_, err := conn.Write([]byte{5, 0})
-	return err
+	if _, err := conn.Write([]byte{5, 0}); err != nil {
+		return fmt.Errorf("write response: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) socks5Request(conn net.Conn) (string, int, error) {
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("read request header: %w", err)
 	}
 
 	if buf[0] != 5 || buf[1] != 1 {
-		return "", 0, fmt.Errorf("unsupported SOCKS5 command: %d", buf[1])
+		return "", 0, fmt.Errorf("%w: cmd=%d", ErrUnsupportedSocksCommand, buf[1])
 	}
 
-	var addr string
-	switch buf[3] {
-	case 1: // IPv4
-		ip := make([]byte, 4)
-		if _, err := io.ReadFull(conn, ip); err != nil {
-			return "", 0, err
-		}
-		addr = net.IP(ip).String()
-	case 3: // Domain
-		lenBuf := make([]byte, 1)
-		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", 0, err
-		}
-		domain := make([]byte, int(lenBuf[0]))
-		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", 0, err
-		}
-		addr = string(domain)
-	case 4: // IPv6
-		ip := make([]byte, 16)
-		if _, err := io.ReadFull(conn, ip); err != nil {
-			return "", 0, err
-		}
-		addr = net.IP(ip).String()
-	default:
-		return "", 0, fmt.Errorf("unsupported address type: %d", buf[3])
+	addr, err := c.readSocks5Addr(conn, buf[3])
+	if err != nil {
+		return "", 0, err
 	}
 
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("read port: %w", err)
 	}
 	port := int(binary.BigEndian.Uint16(portBuf))
 
 	return addr, port, nil
+}
+
+func (c *Client) readSocks5Addr(conn net.Conn, addrType byte) (string, error) {
+	switch addrType {
+	case 1: // IPv4
+		ip := make([]byte, 4)
+		if _, err := io.ReadFull(conn, ip); err != nil {
+			return "", fmt.Errorf("read ipv4: %w", err)
+		}
+		return net.IP(ip).String(), nil
+	case 3: // Domain
+		lenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, lenBuf); err != nil {
+			return "", fmt.Errorf("read domain len: %w", err)
+		}
+		domain := make([]byte, int(lenBuf[0]))
+		if _, err := io.ReadFull(conn, domain); err != nil {
+			return "", fmt.Errorf("read domain: %w", err)
+		}
+		return string(domain), nil
+	case 4: // IPv6
+		ip := make([]byte, 16)
+		if _, err := io.ReadFull(conn, ip); err != nil {
+			return "", fmt.Errorf("read ipv6: %w", err)
+		}
+		return net.IP(ip).String(), nil
+	default:
+		return "", fmt.Errorf("%w: type=%d", ErrUnsupportedAddressType, addrType)
+	}
 }
 
 func (c *Client) onData(data []byte) {

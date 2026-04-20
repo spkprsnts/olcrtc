@@ -11,7 +11,9 @@ import (
 )
 
 var (
-	ErrInvalidKeySize     = errors.New("invalid key size")
+	// ErrInvalidKeySize is returned when the encryption key is not 32 bytes.
+	ErrInvalidKeySize = errors.New("invalid key size")
+	// ErrCiphertextTooShort is returned when the ciphertext is shorter than the nonce size.
 	ErrCiphertextTooShort = errors.New("ciphertext too short")
 )
 

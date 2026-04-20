@@ -5,6 +5,7 @@ package mobile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -111,7 +112,7 @@ func Start(roomID, keyHex string, socksPort int, socksUser, socksPass string) er
 			"telemost",
 			roomURL,
 			keyHex,
-			socksPort,
+			fmt.Sprintf("127.0.0.1:%d", socksPort),
 			"",
 			socksUser,
 			socksPass,

@@ -1,3 +1,4 @@
+// Package logger provides a simple leveled logging interface.
 package logger
 
 import (
@@ -5,6 +6,9 @@ import (
 	"sync/atomic"
 )
 
+// verboseEnabled controls whether verbose and debug logging is enabled.
+//
+//nolint:gochecknoglobals // Global log state is acceptable for CLI tools.
 var verboseEnabled atomic.Bool
 
 // SetVerbose enables or disables verbose/debug logging.

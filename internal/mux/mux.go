@@ -5,35 +5,42 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 )
 
 var (
+	// ErrClientResetID is returned when a client reset is attempted with a zero client ID.
 	ErrClientResetID = errors.New("client reset requires a non-zero client id")
+	// ErrDataTooLarge is returned when a data chunk exceeds the maximum frame size.
+	ErrDataTooLarge = errors.New("data chunk too large")
 )
 
 const (
-	// Frame Header sizes
+	// HeaderSize is the size of the frame header in bytes.
 	HeaderSize = 12
 
-	// Special Stream IDs
+	// ControlStreamID is a special stream ID used for control frames.
 	ControlStreamID uint16 = 0xFFFF
 
-	// Control Frame Types
+	// ControlResetClient is a control frame type used to signal a client reset.
 	ControlResetClient uint32 = 1
 
-	// Frame Types (Internal to mux logic)
-	FrameTypeData    uint16 = 0
+	// FrameTypeData is a marker for data frames.
+	FrameTypeData uint16 = 0
+	// FrameTypeControl is a marker for control frames.
 	FrameTypeControl uint16 = 0xFFFF
 )
 
+// ControlFrame represents a control message between multiplexers.
 type ControlFrame struct {
 	ClientID uint32
 	Type     uint32
 }
 
+// Stream represents a single multiplexed data stream.
 type Stream struct {
 	ID         uint16
 	ClientID   uint32
@@ -44,12 +51,14 @@ type Stream struct {
 	outOfOrder map[uint32][]byte
 }
 
+// RecvBuf returns the current receive buffer content.
 func (s *Stream) RecvBuf() []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.recvBuf
 }
 
+// Multiplexer coordinates multiple Streams over a single transport channel.
 type Multiplexer struct {
 	streams       map[uint16]*Stream
 	nextID        uint16
@@ -67,6 +76,7 @@ type Multiplexer struct {
 	bufferCond *sync.Cond
 }
 
+// New creates a new Multiplexer instance.
 func New(clientID uint32, onSend func([]byte) error) *Multiplexer {
 	m := &Multiplexer{
 		streams:       make(map[uint16]*Stream),
@@ -82,6 +92,7 @@ func New(clientID uint32, onSend func([]byte) error) *Multiplexer {
 	return m
 }
 
+// OpenStream allocates and returns a new unique stream ID.
 func (m *Multiplexer) OpenStream() uint16 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -105,6 +116,7 @@ func (m *Multiplexer) OpenStream() uint16 {
 	}
 }
 
+// SendData fragments and sends data over a specific stream.
 func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 	m.mu.RLock()
 	stream, exists := m.streams[sid]
@@ -115,11 +127,6 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 	}
 
 	const chunkSize = 7000
-	totalChunks := (len(data) + chunkSize - 1) / chunkSize
-
-	if totalChunks > 10 {
-		logger.Debugf("SendData: sid=%d, size=%d bytes, chunks=%d", sid, len(data), totalChunks)
-	}
 
 	for i := 0; i < len(data); i += chunkSize {
 		end := i + chunkSize
@@ -134,10 +141,14 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 		m.sendSeq[sid]++
 		m.sendSeqMu.Unlock()
 
+		if len(chunk) > math.MaxUint16 {
+			return ErrDataTooLarge
+		}
+
 		frame := make([]byte, HeaderSize+len(chunk))
 		binary.BigEndian.PutUint32(frame[0:4], m.clientID)
 		binary.BigEndian.PutUint16(frame[4:6], sid)
-		binary.BigEndian.PutUint16(frame[6:8], uint16(len(chunk)))
+		binary.BigEndian.PutUint16(frame[6:8], uint16(len(chunk))) //nolint:gosec // Length checked above
 		binary.BigEndian.PutUint32(frame[8:12], seq)
 		copy(frame[HeaderSize:], chunk)
 
@@ -149,6 +160,7 @@ func (m *Multiplexer) SendData(sid uint16, data []byte) error {
 	return nil
 }
 
+// CloseStream signals that a stream should be terminated.
 func (m *Multiplexer) CloseStream(sid uint16) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -176,6 +188,7 @@ func (m *Multiplexer) CloseStream(sid uint16) error {
 	return nil
 }
 
+// SendClientReset sends a control frame to reset all streams for this client.
 func (m *Multiplexer) SendClientReset() error {
 	if m.clientID == 0 {
 		return ErrClientResetID
@@ -186,6 +199,7 @@ func (m *Multiplexer) SendClientReset() error {
 	return nil
 }
 
+// BuildControlFrame constructs a raw control frame.
 func BuildControlFrame(clientID uint32, controlType uint32) []byte {
 	frame := make([]byte, HeaderSize)
 	binary.BigEndian.PutUint32(frame[0:4], clientID)
@@ -195,6 +209,7 @@ func BuildControlFrame(clientID uint32, controlType uint32) []byte {
 	return frame
 }
 
+// ParseControlFrame attempts to extract control information from a frame.
 func ParseControlFrame(frame []byte) (ControlFrame, bool) {
 	if len(frame) < HeaderSize {
 		return ControlFrame{}, false
@@ -212,6 +227,7 @@ func ParseControlFrame(frame []byte) (ControlFrame, bool) {
 	}, true
 }
 
+// HandleFrame processes an incoming frame from the transport.
 func (m *Multiplexer) HandleFrame(frame []byte) {
 	control, ok := ParseControlFrame(frame)
 	if ok {
@@ -336,6 +352,7 @@ func (m *Multiplexer) handleControlFrame(control ControlFrame) {
 	}
 }
 
+// ResetClient closes and removes all streams associated with a client ID.
 func (m *Multiplexer) ResetClient(clientID uint32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -363,6 +380,7 @@ func (m *Multiplexer) waitForBufferSpace(sid uint16, clientID uint32, need int) 
 	}
 }
 
+// ReadStream retrieves and clears the current receive buffer for a stream.
 func (m *Multiplexer) ReadStream(sid uint16) []byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -381,6 +399,7 @@ func (m *Multiplexer) ReadStream(sid uint16) []byte {
 	return data
 }
 
+// StreamClosed returns true if the stream is closed or doesn't exist.
 func (m *Multiplexer) StreamClosed(sid uint16) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -389,6 +408,7 @@ func (m *Multiplexer) StreamClosed(sid uint16) bool {
 	return !exists || stream.closed
 }
 
+// GetStreams returns a list of all active stream IDs.
 func (m *Multiplexer) GetStreams() []uint16 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -400,12 +420,14 @@ func (m *Multiplexer) GetStreams() []uint16 {
 	return sids
 }
 
+// GetStream returns the Stream object for a given ID.
 func (m *Multiplexer) GetStream(sid uint16) *Stream {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.streams[sid]
 }
 
+// Reset clears all multiplexer state and closes all streams.
 func (m *Multiplexer) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -424,6 +446,7 @@ func (m *Multiplexer) Reset() {
 	m.bufferCond.Broadcast()
 }
 
+// UpdateSendFunc updates the function used to transmit raw frames.
 func (m *Multiplexer) UpdateSendFunc(onSend func([]byte) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -431,6 +454,7 @@ func (m *Multiplexer) UpdateSendFunc(onSend func([]byte) error) {
 	m.onSend = onSend
 }
 
+// WaitForData returns a channel that signals when new data is available for a stream.
 func (m *Multiplexer) WaitForData(sid uint16) <-chan struct{} {
 	m.dataReadyMu.Lock()
 	defer m.dataReadyMu.Unlock()
@@ -441,6 +465,7 @@ func (m *Multiplexer) WaitForData(sid uint16) <-chan struct{} {
 	return m.dataReady[sid]
 }
 
+// CleanupDataChannel removes the data notification channel for a stream.
 func (m *Multiplexer) CleanupDataChannel(sid uint16) {
 	m.dataReadyMu.Lock()
 	defer m.dataReadyMu.Unlock()
