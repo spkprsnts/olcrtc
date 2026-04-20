@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
-	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
 var (
@@ -42,7 +42,7 @@ var (
 
 // Server handles incoming WebRTC connections and proxies their traffic.
 type Server struct {
-	transports     []transport.Transport
+	links          []link.Link
 	cipher         *crypto.Cipher
 	mux            *mux.Multiplexer
 	connections    map[uint16]net.Conn
@@ -88,7 +88,7 @@ func Run(
 		cipher:         cipher,
 		connections:    make(map[uint16]net.Conn),
 		streamPumps:    make(map[uint16]net.Conn),
-		transports:     make([]transport.Transport, 0),
+		links:          make([]link.Link, 0),
 		dnsServer:      dnsServer,
 		socksProxyAddr: socksProxyAddr,
 		socksProxyPort: socksProxyPort,
@@ -161,8 +161,8 @@ func (s *Server) setupMux() {
 	s.mux = mux.New(0, func(frame []byte) error {
 		for {
 			canSend := true
-			for _, tr := range s.transports {
-				if !tr.CanSend() {
+			for _, ln := range s.links {
+				if !ln.CanSend() {
 					canSend = false
 					break
 				}
@@ -177,11 +177,11 @@ func (s *Server) setupMux() {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
-		if len(s.transports) == 0 {
+		if len(s.links) == 0 {
 			return ErrNoPeers
 		}
-		idx := s.peerIdx.Add(1) % uint32(len(s.transports)) //nolint:gosec
-		return s.transports[idx].Send(encrypted)
+		idx := s.peerIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
+		return s.links[idx].Send(encrypted)
 	})
 }
 
@@ -193,7 +193,8 @@ func (s *Server) addTransport(
 	peerID int,
 	cancel context.CancelFunc,
 ) error {
-	tr, err := transport.New(ctx, transportName, transport.Config{
+	ln, err := link.New(ctx, "direct", link.Config{
+		Transport: transportName,
 		Carrier:   providerName,
 		RoomURL:   roomURL,
 		Name:      names.Generate(),
@@ -203,21 +204,21 @@ func (s *Server) addTransport(
 		ProxyPort: s.socksProxyPort,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create transport: %w", err)
+		return fmt.Errorf("failed to create link: %w", err)
 	}
 
-	tr.SetEndedCallback(func(reason string) {
+	ln.SetEndedCallback(func(reason string) {
 		logger.Infof("Server transport %d reported conference end: %s", peerID, reason)
 		cancel()
 	})
-	s.transports = append(s.transports, tr)
+	s.links = append(s.links, ln)
 
-	tr.SetReconnectCallback(func() {
+	ln.SetReconnectCallback(func() {
 		s.handleTransportReconnect(peerID)
 	})
 
 	logger.Infof("Connecting transport %d via %s/%s...", peerID, transportName, providerName)
-	if err := tr.Connect(ctx); err != nil {
+	if err := ln.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect transport: %w", err)
 	}
 	logger.Infof("Transport %d connected", peerID)
@@ -225,7 +226,7 @@ func (s *Server) addTransport(
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		tr.WatchConnection(ctx)
+		ln.WatchConnection(ctx)
 	}()
 	return nil
 }
@@ -247,11 +248,11 @@ func (s *Server) handleTransportReconnect(peerID int) {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
-		if len(s.transports) == 0 {
+		if len(s.links) == 0 {
 			return ErrNoPeers
 		}
-		idx := s.peerIdx.Add(1) % uint32(len(s.transports)) //nolint:gosec
-		return s.transports[idx].Send(encrypted)
+		idx := s.peerIdx.Add(1) % uint32(len(s.links)) //nolint:gosec
+		return s.links[idx].Send(encrypted)
 	})
 	s.mux.Reset()
 }
@@ -349,7 +350,7 @@ func (s *Server) shutdown() {
 	}
 	s.connMu.Unlock()
 
-	for i, tr := range s.transports {
+	for i, tr := range s.links {
 		logger.Infof("closing transport %d", i)
 		_ = tr.Close()
 	}
@@ -561,7 +562,7 @@ func (s *Server) startStreamPump(ctx context.Context, sid uint16, conn net.Conn)
 }
 
 func (s *Server) canSendData() bool {
-	for _, tr := range s.transports {
+	for _, tr := range s.links {
 		if !tr.CanSend() {
 			return false
 		}

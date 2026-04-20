@@ -8,6 +8,8 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
+	"github.com/openlibrecommunity/olcrtc/internal/link"
+	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
 	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
 	"github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
 	"github.com/openlibrecommunity/olcrtc/internal/provider/wbstream"
@@ -49,6 +51,7 @@ func RegisterDefaults() {
 	carrier.Register("telemost", telemost.New)
 	carrier.Register("wb_stream", wbstream.New)
 
+	link.Register("direct", direct.New)
 	transport.Register("datachannel", datachannel.New)
 }
 

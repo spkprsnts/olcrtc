@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/mux"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
-	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
 var (
@@ -43,7 +43,7 @@ var (
 
 // Client handles local SOCKS5 connections and tunnels them via WebRTC.
 type Client struct {
-	transports    []transport.Transport
+	links         []link.Link
 	cipher        *crypto.Cipher
 	mux           *mux.Multiplexer
 	connections   map[uint16]net.Conn
@@ -100,7 +100,7 @@ func RunWithReady(
 	c := &Client{
 		cipher:      cipher,
 		connections: make(map[uint16]net.Conn),
-		transports:  make([]transport.Transport, 0),
+		links:       make([]link.Link, 0),
 		clientID:    clientID,
 		dnsServer:   dnsServer,
 	}
@@ -161,8 +161,8 @@ func (c *Client) setupMux() {
 	c.mux = mux.New(c.clientID, func(frame []byte) error {
 		for {
 			canSend := true
-			for _, tr := range c.transports {
-				if !tr.CanSend() {
+			for _, ln := range c.links {
+				if !ln.CanSend() {
 					canSend = false
 					break
 				}
@@ -177,11 +177,11 @@ func (c *Client) setupMux() {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
-		if len(c.transports) == 0 {
+		if len(c.links) == 0 {
 			return ErrNoPeers
 		}
-		idx := c.peerIdx.Add(1) % uint32(len(c.transports)) //nolint:gosec
-		return c.transports[idx].Send(encrypted)
+		idx := c.peerIdx.Add(1) % uint32(len(c.links)) //nolint:gosec
+		return c.links[idx].Send(encrypted)
 	})
 }
 
@@ -196,7 +196,8 @@ func (c *Client) addTransport(
 	socksProxyAddr string,
 	socksProxyPort int,
 ) error {
-	tr, err := transport.New(ctx, transportName, transport.Config{
+	ln, err := link.New(ctx, "direct", link.Config{
+		Transport: transportName,
 		Carrier:   providerName,
 		RoomURL:   roomURL,
 		Name:      names.Generate(),
@@ -206,21 +207,21 @@ func (c *Client) addTransport(
 		ProxyPort: socksProxyPort,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create transport: %w", err)
+		return fmt.Errorf("failed to create link: %w", err)
 	}
 
-	tr.SetEndedCallback(func(reason string) {
+	ln.SetEndedCallback(func(reason string) {
 		logger.Infof("Client transport %d reported conference end: %s", peerID, reason)
 		cancel()
 	})
-	c.transports = append(c.transports, tr)
+	c.links = append(c.links, ln)
 
-	tr.SetReconnectCallback(func() {
+	ln.SetReconnectCallback(func() {
 		c.handleTransportReconnect(peerID)
 	})
 
 	logger.Infof("Connecting transport %d via %s/%s...", peerID, transportName, providerName)
-	if err := tr.Connect(ctx); err != nil {
+	if err := ln.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect transport: %w", err)
 	}
 	logger.Infof("Transport %d connected", peerID)
@@ -228,7 +229,7 @@ func (c *Client) addTransport(
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		tr.WatchConnection(ctx)
+		ln.WatchConnection(ctx)
 	}()
 
 	// Send initial reset to clean up any stale connections for this clientID on server
@@ -256,11 +257,11 @@ func (c *Client) handleTransportReconnect(peerID int) {
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrEncryptFailed, err)
 		}
-		if len(c.transports) == 0 {
+		if len(c.links) == 0 {
 			return ErrNoPeers
 		}
-		idx := c.peerIdx.Add(1) % uint32(len(c.transports)) //nolint:gosec
-		return c.transports[idx].Send(encrypted)
+		idx := c.peerIdx.Add(1) % uint32(len(c.links)) //nolint:gosec
+		return c.links[idx].Send(encrypted)
 	})
 	c.mux.Reset()
 
@@ -443,7 +444,7 @@ func (c *Client) shutdown() {
 	}
 	c.connMu.Unlock()
 
-	for i, tr := range c.transports {
+	for i, tr := range c.links {
 		logger.Infof("closing transport %d", i)
 		_ = tr.Close()
 	}
@@ -516,7 +517,7 @@ func (c *Client) startStreamPump(ctx context.Context, sid uint16, conn net.Conn)
 }
 
 func (c *Client) canSendData() bool {
-	for _, tr := range c.transports {
+	for _, tr := range c.links {
 		if !tr.CanSend() {
 			return false
 		}
