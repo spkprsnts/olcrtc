@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -12,16 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openlibrecommunity/olcrtc/internal/client"
+	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
-	"github.com/openlibrecommunity/olcrtc/internal/provider"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/telemost"
-	"github.com/openlibrecommunity/olcrtc/internal/provider/wbstream"
-	"github.com/openlibrecommunity/olcrtc/internal/server"
-	"github.com/openlibrecommunity/olcrtc/internal/transport"
-	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
 )
 
 type config struct {
@@ -39,14 +31,6 @@ type config struct {
 	socksProxyPort int
 }
 
-var (
-	errRoomIDRequired       = errors.New("room ID required")
-	errModeRequired         = errors.New("specify -mode srv or -mode cnc")
-	errProviderRequired     = errors.New("provider required (use -provider telemost or -provider jazz)")
-	errUnsupportedProvider  = errors.New("unsupported provider")
-	errUnsupportedTransport = errors.New("unsupported transport")
-)
-
 func main() {
 	if err := run(); err != nil {
 		logger.Error(err)
@@ -55,15 +39,12 @@ func main() {
 }
 
 func run() error {
-	provider.Register("jazz", jazz.New)
-	provider.Register("telemost", telemost.New)
-	provider.Register("wb_stream", wbstream.New)
-	transport.Register("datachannel", datachannel.New)
+	session.RegisterDefaults()
 
 	cfg := parseFlags()
 	configureLogging(cfg.debug)
 
-	if err := validateConfig(cfg); err != nil {
+	if err := session.Validate(toSessionConfig(cfg)); err != nil {
 		return err
 	}
 
@@ -83,7 +64,9 @@ func run() error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	errCh := make(chan error, 1)
-	go runMode(ctx, cfg, errCh)
+	go func() {
+		errCh <- session.Run(ctx, toSessionConfig(cfg))
+	}()
 
 	select {
 	case <-sigCh:
@@ -121,41 +104,6 @@ func configureLogging(debug bool) {
 	}
 }
 
-func validateConfig(cfg config) error {
-	availableProviders := provider.Available()
-	validProvider := false
-	for _, p := range availableProviders {
-		if cfg.provider == p {
-			validProvider = true
-			break
-		}
-	}
-
-	availableTransports := transport.Available()
-	validTransport := false
-	for _, t := range availableTransports {
-		if cfg.transport == t {
-			validTransport = true
-			break
-		}
-	}
-
-	switch {
-	case cfg.provider == "":
-		return errProviderRequired
-	case !validProvider:
-		return fmt.Errorf("%w: %s (available: %v)", errUnsupportedProvider, cfg.provider, availableProviders)
-	case !validTransport:
-		return fmt.Errorf("%w: %s (available: %v)", errUnsupportedTransport, cfg.transport, availableTransports)
-	case cfg.roomID == "" && cfg.provider != "jazz":
-		return errRoomIDRequired
-	case cfg.mode != "srv" && cfg.mode != "cnc":
-		return errModeRequired
-	default:
-		return nil
-	}
-}
-
 func resolveDataDir(dataDir string) (string, error) {
 	if filepath.IsAbs(dataDir) {
 		return dataDir, nil
@@ -179,49 +127,18 @@ func loadNames(dataDir string) error {
 	return nil
 }
 
-func runMode(ctx context.Context, cfg config, errCh chan<- error) {
-	roomURL := buildRoomURL(cfg.provider, cfg.roomID)
-
-	switch cfg.mode {
-	case "srv":
-		errCh <- server.Run(
-			ctx,
-			cfg.transport,
-			cfg.provider,
-			roomURL,
-			cfg.keyHex,
-			cfg.dnsServer,
-			cfg.socksProxyAddr,
-			cfg.socksProxyPort,
-		)
-	case "cnc":
-		errCh <- client.Run(
-			ctx,
-			cfg.transport,
-			cfg.provider,
-			roomURL,
-			cfg.keyHex,
-			fmt.Sprintf("%s:%d", cfg.socksHost, cfg.socksPort),
-			cfg.dnsServer,
-			"",
-			"",
-		)
-	}
-}
-
-func buildRoomURL(providerName, roomID string) string {
-	switch providerName {
-	case "telemost":
-		return "https://telemost.yandex.ru/j/" + roomID
-	case "jazz":
-		if roomID == "" {
-			return "any"
-		}
-		return roomID
-	case "wb_stream":
-		return roomID
-	default:
-		return roomID
+func toSessionConfig(cfg config) session.Config {
+	return session.Config{
+		Mode:           cfg.mode,
+		Transport:      cfg.transport,
+		Provider:       cfg.provider,
+		RoomID:         cfg.roomID,
+		KeyHex:         cfg.keyHex,
+		SOCKSHost:      cfg.socksHost,
+		SOCKSPort:      cfg.socksPort,
+		DNSServer:      cfg.dnsServer,
+		SOCKSProxyAddr: cfg.socksProxyAddr,
+		SOCKSProxyPort: cfg.socksProxyPort,
 	}
 }
 
