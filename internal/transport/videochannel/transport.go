@@ -61,6 +61,7 @@ type streamTransport struct {
 	videoH       int
 	videoFPS     int
 	videoBitrate string
+	videoHW      string
 }
 
 // New creates a visual videochannel transport backed by a carrier-specific provider.
@@ -109,6 +110,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		videoH:       cfg.VideoHeight,
 		videoFPS:     cfg.VideoFPS,
 		videoBitrate: cfg.VideoBitrate,
+		videoHW:      cfg.VideoHW,
 	}
 
 	if err := stream.AddTrack(track); err != nil {
@@ -124,7 +126,7 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 	connectCtx, cancel := context.WithTimeout(ctx, defaultConnectTimeout)
 	defer cancel()
 
-	encoder, err := newFFmpegEncoder(p.codec, p.videoW, p.videoH, p.videoFPS, p.videoBitrate)
+	encoder, err := newFFmpegEncoder(p.codec, p.videoW, p.videoH, p.videoFPS, p.videoBitrate, p.videoHW)
 	if err != nil {
 		return err
 	}
@@ -328,7 +330,7 @@ func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc
 		return
 	}
 
-	decoder, err := newFFmpegDecoder(codec, p.videoW, p.videoH, p.videoFPS)
+	decoder, err := newFFmpegDecoder(codec, p.videoW, p.videoH, p.videoFPS, p.videoHW)
 	if err != nil {
 		logger.Warnf("videochannel decoder init failed: %v", err)
 		return

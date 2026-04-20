@@ -80,6 +80,7 @@ func Run(
 	videoHeight int,
 	videoFPS int,
 	videoBitrate string,
+	videoHW string,
 ) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

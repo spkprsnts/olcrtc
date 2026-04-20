@@ -37,6 +37,7 @@ type Config struct {
 	VideoHeight  int
 	VideoFPS     int
 	VideoBitrate string
+	VideoHW      string
 }
 
 // Factory creates a link instance.
