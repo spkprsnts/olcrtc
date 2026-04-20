@@ -39,8 +39,8 @@ type codecSpec struct {
 }
 
 func codecSpecForCarrier(carrier string) codecSpec {
-	// Telemost works best with H264 for hardware acceleration
-	return h264CodecSpec()
+	// Natural default for most WebRTC providers
+	return vp8CodecSpec()
 }
 
 func codecSpecForMime(mimeType string) (codecSpec, bool) {
@@ -72,7 +72,6 @@ func h264CodecSpec() codecSpec {
 			"-tune", "zerolatency",
 			"-g", "1",
 			"-pix_fmt", "yuv420p",
-			"-b:v", "2048k",
 		},
 	}
 }
@@ -95,7 +94,6 @@ func vp9CodecSpec() codecSpec {
 			"-static-thresh", "0",
 			"-g", "1",
 			"-pix_fmt", "yuv420p",
-			"-b:v", "2048k",
 		},
 	}
 }
@@ -118,7 +116,6 @@ func vp8CodecSpec() codecSpec {
 			"-static-thresh", "0",
 			"-g", "1",
 			"-pix_fmt", "yuv420p",
-			"-b:v", "2048k",
 		},
 	}
 }
@@ -141,23 +138,20 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string
 		return nil, ErrFFmpegUnavailable
 	}
 
-	args := []string{
-		"-loglevel", "error",
-	}
+	args := []string{"-loglevel", "error"}
 
-	// Use hardware acceleration if requested
+	// Determine encoder binary based on HW flag
+	vcodec := spec.encoder
 	if hw == "nvenc" {
-		if spec.mimeType == webrtc.MimeTypeH264 {
-			spec.encoder = "h264_nvenc"
-			spec.encodeArgs = []string{
-				"-c:v", "h264_nvenc",
-				"-preset", "p1", // fastest
-				"-tune", "ull", // ultra low latency
-				"-rc", "vbr",
-				"-g", "1",
-				"-pix_fmt", "yuv420p",
-				"-b:v", bitrate,
-			}
+		switch spec.mimeType {
+		case webrtc.MimeTypeH264:
+			vcodec = "h264_nvenc"
+		case webrtc.MimeTypeVP8:
+			vcodec = "vp8_nvenc"
+		case webrtc.MimeTypeVP9:
+			vcodec = "vp9_nvenc"
+		case webrtc.MimeTypeAV1:
+			vcodec = "av1_nvenc"
 		}
 	}
 
@@ -169,22 +163,22 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string
 		"-i", "pipe:0",
 		"-an",
 	)
-	
-	args = append(args, spec.encodeArgs...)
-	
-	// Ensure bitrate is set correctly in args
-	foundBitrate := false
-	for i, arg := range args {
-		if arg == "-b:v" && i+1 < len(args) {
-			args[i+1] = bitrate
-			foundBitrate = true
-		}
-	}
-	if !foundBitrate {
-		args = append(args, "-b:v", bitrate)
+
+	// Apply hardware specific flags if using NVENC
+	if strings.HasSuffix(vcodec, "_nvenc") {
+		args = append(args,
+			"-c:v", vcodec,
+			"-preset", "p1",
+			"-tune", "ull",
+			"-rc", "vbr",
+		)
+	} else {
+		// Use software encoder args from spec
+		args = append(args, spec.encodeArgs...)
 	}
 
-	// Format output (IVF for VP8/9, but H264 needs raw h264 for Pion to wrap it)
+	args = append(args, "-g", "1", "-pix_fmt", "yuv420p", "-b:v", bitrate)
+
 	if spec.mimeType == webrtc.MimeTypeH264 {
 		args = append(args, "-f", "h264", "pipe:1")
 	} else {
@@ -226,12 +220,11 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string
 
 func (e *ffmpegEncoder) EncodeFrame(frame []byte) ([]byte, error) {
 	if len(frame) != e.width*e.height {
-		return nil, fmt.Errorf("unexpected encoder frame size: %d (expected %d)", len(frame), e.width*e.height)
+		return nil, fmt.Errorf("unexpected encoder frame size: %d", len(frame))
 	}
 	if err := e.processErr(); err != nil {
 		return nil, err
 	}
-
 	if err := writeAll(e.stdin, frame); err != nil {
 		return nil, fmt.Errorf("write encoder frame: %w", err)
 	}
@@ -264,13 +257,11 @@ func (e *ffmpegEncoder) Close() error {
 
 func (e *ffmpegEncoder) readIVF(stdout io.Reader) {
 	defer close(e.frames)
-
 	reader, _, err := ivfreader.NewWith(stdout)
 	if err != nil {
 		e.setErr(fmt.Errorf("encoder ivf header: %w", err))
 		return
 	}
-
 	for {
 		frame, _, err := reader.ParseNextFrame()
 		if err != nil {
@@ -279,7 +270,6 @@ func (e *ffmpegEncoder) readIVF(stdout io.Reader) {
 			}
 			return
 		}
-
 		copyFrame := append([]byte(nil), frame...)
 		if e.closed.Load() {
 			return
@@ -290,10 +280,7 @@ func (e *ffmpegEncoder) readIVF(stdout io.Reader) {
 
 func (e *ffmpegEncoder) readRawH264(stdout io.Reader) {
 	defer close(e.frames)
-	// Very simple H264 frame reader - in real app we'd need an annexb splitter
-	// For zerolatency with -g 1, every frame is an IDR, so we can just read.
-	// But it's better to use a buffer and hope for the best.
-	buf := make([]byte, 1024*1024) 
+	buf := make([]byte, 1024*1024)
 	for {
 		n, err := stdout.Read(buf)
 		if err != nil {
@@ -365,10 +352,7 @@ func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw string) (*ffmpe
 		}
 	}
 
-	args := []string{
-		"-loglevel", "info",
-	}
-
+	args := []string{"-loglevel", "info"}
 	if spec.mimeType == webrtc.MimeTypeH264 {
 		args = append(args, "-f", "h264")
 	} else {
@@ -410,7 +394,6 @@ func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw string) (*ffmpe
 		mimeType: spec.mimeType,
 	}
 
-	// We only write IVF header for VP8/9. H264 is a raw stream.
 	if spec.mimeType != webrtc.MimeTypeH264 {
 		if err := writeIVFHeader(stdin, spec.fourCC, width, height, fps); err != nil {
 			_ = dec.Close()
@@ -426,7 +409,6 @@ func (d *ffmpegDecoder) PushSample(sample []byte) error {
 	if err := d.processErr(); err != nil {
 		return err
 	}
-
 	if d.mimeType == webrtc.MimeTypeH264 {
 		if err := writeAll(d.stdin, sample); err != nil {
 			return fmt.Errorf("write h264 decoder frame: %w", err)
@@ -466,7 +448,6 @@ func (d *ffmpegDecoder) Close() error {
 
 func (d *ffmpegDecoder) readRawFrames(stdout io.Reader, width, height int) {
 	defer close(d.frames)
-
 	logicalFrameBytes := width * height
 	buf := make([]byte, logicalFrameBytes)
 	for {
@@ -476,7 +457,6 @@ func (d *ffmpegDecoder) readRawFrames(stdout io.Reader, width, height int) {
 			}
 			return
 		}
-
 		copyFrame := append([]byte(nil), buf...)
 		if d.closed.Load() {
 			return
@@ -489,9 +469,8 @@ func (d *ffmpegDecoder) setErr(err error) {
 	if err == nil {
 		return
 	}
-	eMu := &d.errMu
-	eMu.Lock()
-	defer eMu.Unlock()
+	d.errMu.Lock()
+	defer d.errMu.Unlock()
 	if d.err == nil {
 		d.err = withStderr(err, d.stderr)
 	}
