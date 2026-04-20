@@ -106,6 +106,7 @@ func parseFlags() config {
 	flag.IntVar(&cfg.videoHeight, "video-h", 360, "Video logical height (videochannel only)")
 	flag.IntVar(&cfg.videoFPS, "video-fps", 25, "Video frames per second (videochannel only)")
 	flag.StringVar(&cfg.videoBitrate, "video-bitrate", "2048k", "Video bitrate (videochannel only)")
+	flag.StringVar(&cfg.videoHW, "video-hw", "none", "Hardware acceleration (none, nvenc)")
 	flag.Parse()
 
 	return cfg
@@ -157,6 +158,7 @@ func toSessionConfig(cfg config) session.Config {
 		VideoHeight:    cfg.videoHeight,
 		VideoFPS:       cfg.videoFPS,
 		VideoBitrate:   cfg.videoBitrate,
+		VideoHW:        cfg.videoHW,
 	}
 }
 
@@ -172,7 +174,11 @@ func firstNonEmpty(values ...string) string {
 func waitForShutdown(errCh <-chan error) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- <-errCh
+		if err := <-errCh; err != nil {
+			done <- err
+		} else {
+			done <- nil
+		}
 	}()
 
 	select {
