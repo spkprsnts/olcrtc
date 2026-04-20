@@ -3,11 +3,27 @@ package provider
 
 import (
 	"context"
+	"errors"
 
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	// ErrProviderNotFound is returned when a requested provider is not registered.
+	ErrProviderNotFound = errors.New("provider not found")
+	// ErrDataChannelTimeout is returned when the DataChannel fails to open within the timeout period.
+	ErrDataChannelTimeout = errors.New("datachannel timeout")
+	// ErrDataChannelNotReady is returned when attempting to send data before the DataChannel is open.
+	ErrDataChannelNotReady = errors.New("datachannel not ready")
+	// ErrSendQueueClosed is returned when attempting to send data after the send queue has been closed.
+	ErrSendQueueClosed = errors.New("send queue closed")
+	// ErrSendQueueTimeout is returned when the send queue is full and the timeout is reached.
+	ErrSendQueueTimeout = errors.New("send queue timeout")
+)
+
 // Provider defines the standard interface for WebRTC connection handlers.
+//
+//nolint:interfacebloat // All methods are necessary for provider abstraction.
 type Provider interface {
 	Connect(ctx context.Context) error
 	Send(data []byte) error
@@ -19,6 +35,9 @@ type Provider interface {
 	CanSend() bool
 	GetSendQueue() chan []byte
 	GetBufferedAmount() uint64
+
+	// AddVideoTrack adds a video track to the connection.
+	AddVideoTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error)
 }
 
 // Config holds common configuration for all providers.
@@ -34,7 +53,9 @@ type Config struct {
 // Factory is a function that creates a new Provider instance.
 type Factory func(ctx context.Context, cfg Config) (Provider, error)
 
-//nolint:gochecknoglobals
+// registry holds all registered provider factories.
+//
+//nolint:gochecknoglobals // Global registry is required for provider discovery.
 var registry = make(map[string]Factory)
 
 // Register adds a new provider factory to the registry.

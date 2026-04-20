@@ -18,8 +18,14 @@ const (
 )
 
 var (
-	errPeerClosed    = errors.New("peer closed")
-	errSendQueueFull = errors.New("send queue full")
+	// ErrPeerClosed is returned when an operation is attempted on a closed peer.
+	ErrPeerClosed = errors.New("peer closed")
+	// ErrSendQueueFull is returned when the transmission queue is full.
+	ErrSendQueueFull = errors.New("send queue full")
+	// ErrLiveKitNotConnected is returned when the LiveKit room is not connected.
+	ErrLiveKitNotConnected = errors.New("livekit room not connected")
+	// ErrVideoNotSupported is returned when video tracks are not supported by this provider.
+	ErrVideoNotSupported = errors.New("video tracks not supported yet in wbstream")
 )
 
 // Peer represents a WB Stream WebRTC connection using LiveKit.
@@ -137,13 +143,13 @@ func (p *Peer) processSendQueue() {
 // Send transmits data to the room.
 func (p *Peer) Send(data []byte) error {
 	if p.closed.Load() {
-		return errPeerClosed
+		return ErrPeerClosed
 	}
 	select {
 	case p.sendQueue <- data:
 		return nil
 	default:
-		return errSendQueueFull
+		return ErrSendQueueFull
 	}
 }
 
@@ -192,4 +198,20 @@ func (p *Peer) GetSendQueue() chan []byte {
 // GetBufferedAmount is a stub for WB Stream.
 func (p *Peer) GetBufferedAmount() uint64 {
 	return 0
+}
+
+// AddVideoTrack adds a video track to the LiveKit room.
+func (p *Peer) AddVideoTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+	if p.room == nil || p.room.LocalParticipant == nil {
+		return nil, ErrLiveKitNotConnected
+	}
+
+	_, err := p.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
+		Name: "video",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish track: %w", err)
+	}
+
+	return nil, ErrVideoNotSupported
 }

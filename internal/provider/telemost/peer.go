@@ -1160,3 +1160,20 @@ func (p *Peer) CanSend() bool {
 	}
 	return len(p.sendQueue) < 4000
 }
+
+var (
+	 // ErrPublisherNotInitialized is returned when the publisher peer connection is not set up.
+	ErrPublisherNotInitialized = errors.New("publisher peer connection not initialized")
+)
+
+// AddVideoTrack adds a video track to the publisher peer connection.
+func (p *Peer) AddVideoTrack(track *webrtc.TrackLocalStaticRTP) (*webrtc.RTPSender, error) {
+	if p.pcPub == nil {
+		return nil, ErrPublisherNotInitialized
+	}
+	sender, err := p.pcPub.AddTrack(track)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add track: %w", err)
+	}
+	return sender, nil
+}
