@@ -73,6 +73,8 @@ type Config struct {
 	VideoBitrate   string
 	VideoHW        string
 	VideoQRSize    int
+	VP8FPS         int
+	VP8BatchSize   int
 }
 
 // RegisterDefaults registers built-in providers and transports.
@@ -206,6 +208,8 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.VideoBitrate,
 			cfg.VideoHW,
 			cfg.VideoQRSize,
+			cfg.VP8FPS,
+			cfg.VP8BatchSize,
 		)
 	case "cnc":
 		return client.Run(
@@ -225,6 +229,8 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.VideoBitrate,
 			cfg.VideoHW,
 			cfg.VideoQRSize,
+			cfg.VP8FPS,
+			cfg.VP8BatchSize,
 		)
 	default:
 		return ErrModeRequired

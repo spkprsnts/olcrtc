@@ -37,6 +37,8 @@ type config struct {
 	videoBitrate   string
 	videoHW        string
 	videoQRSize    int
+	vp8FPS         int
+	vp8BatchSize   int
 }
 
 func main() {
@@ -113,6 +115,8 @@ func parseFlags() config {
 	flag.StringVar(&cfg.videoBitrate, "video-bitrate", "", "Video bitrate (videochannel only)")
 	flag.StringVar(&cfg.videoHW, "video-hw", "", "Hardware acceleration (none, nvenc)")
 	flag.IntVar(&cfg.videoQRSize, "video-qr-size", 0, "Video QR code fragment size (videochannel only)")
+	flag.IntVar(&cfg.vp8FPS, "vp8-fps", 0, "VP8 frames per second (vp8channel only, default 25)")
+	flag.IntVar(&cfg.vp8BatchSize, "vp8-batch", 0, "VP8 frames per tick (vp8channel only, default 1)")
 	flag.Parse()
 
 	return cfg
@@ -166,6 +170,8 @@ func toSessionConfig(cfg config) session.Config {
 		VideoBitrate:   cfg.videoBitrate,
 		VideoHW:        cfg.videoHW,
 		VideoQRSize:    cfg.videoQRSize,
+		VP8FPS:         cfg.vp8FPS,
+		VP8BatchSize:   cfg.vp8BatchSize,
 	}
 }
 

@@ -19,7 +19,8 @@ import (
 
 const (
 	defaultMaxPayloadSize = 60 * 1024
-	defaultFrameInterval  = 40 * time.Millisecond
+	defaultFPS            = 25
+	defaultBatchSize      = 1
 	defaultConnectTimeout = 30 * time.Second
 	dataMarker            = 0xFF
 	rtpBufSize            = 65536
@@ -37,15 +38,17 @@ var vp8Keepalive = []byte{
 }
 
 type streamTransport struct {
-	stream     carrier.VideoTrack
-	track      *webrtc.TrackLocalStaticSample
-	onData     func([]byte)
-	outbound   chan []byte
-	closeCh    chan struct{}
-	writerDone chan struct{}
-	closed     atomic.Bool
-	writerUp   atomic.Bool
-	startOnce  sync.Once
+	stream        carrier.VideoTrack
+	track         *webrtc.TrackLocalStaticSample
+	onData        func([]byte)
+	outbound      chan []byte
+	closeCh       chan struct{}
+	writerDone    chan struct{}
+	closed        atomic.Bool
+	writerUp      atomic.Bool
+	startOnce     sync.Once
+	frameInterval time.Duration
+	batchSize     int
 }
 
 func New(ctx context.Context, cfg transport.Config) (transport.Transport, error) {
@@ -83,13 +86,24 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		return nil, fmt.Errorf("create local video track: %w", err)
 	}
 
+	fps := cfg.VP8FPS
+	if fps <= 0 {
+		fps = defaultFPS
+	}
+	batchSize := cfg.VP8BatchSize
+	if batchSize <= 0 {
+		batchSize = defaultBatchSize
+	}
+
 	tr := &streamTransport{
-		stream:     stream,
-		track:      track,
-		onData:     cfg.OnData,
-		outbound:   make(chan []byte, 256),
-		closeCh:    make(chan struct{}),
-		writerDone: make(chan struct{}),
+		stream:        stream,
+		track:         track,
+		onData:        cfg.OnData,
+		outbound:      make(chan []byte, 256),
+		closeCh:       make(chan struct{}),
+		writerDone:    make(chan struct{}),
+		frameInterval: time.Second / time.Duration(fps),
+		batchSize:     batchSize,
 	}
 
 	if err := stream.AddTrack(track); err != nil {
@@ -174,7 +188,7 @@ func (p *streamTransport) Features() transport.Features {
 func (p *streamTransport) writerLoop() {
 	defer close(p.writerDone)
 
-	ticker := time.NewTicker(defaultFrameInterval)
+	ticker := time.NewTicker(p.frameInterval)
 	defer ticker.Stop()
 
 	for {
@@ -182,19 +196,26 @@ func (p *streamTransport) writerLoop() {
 		case <-p.closeCh:
 			return
 		case <-ticker.C:
-			var sample []byte
+			sent := 0
+			for sent < p.batchSize {
+				var sample []byte
+				select {
+				case frame := <-p.outbound:
+					sample = frame
+				default:
+					sample = vp8Keepalive
+				}
 
-			select {
-			case frame := <-p.outbound:
-				sample = frame
-			default:
-				sample = vp8Keepalive
+				_ = p.track.WriteSample(media.Sample{
+					Data:     sample,
+					Duration: p.frameInterval,
+				})
+				sent++
+
+				if sample[0] != dataMarker {
+					break
+				}
 			}
-
-			_ = p.track.WriteSample(media.Sample{
-				Data:     sample,
-				Duration: defaultFrameInterval,
-			})
 		}
 	}
 }
