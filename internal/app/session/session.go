@@ -16,6 +16,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/seichannel"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/videochannel"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/vp8channel"
 )
 
 var (
@@ -35,7 +36,7 @@ var (
 	// ErrLinkRequired indicates that link is not provided.
 	ErrLinkRequired = errors.New("link required (use -link direct)")
 	// ErrTransportRequired indicates that transport is not provided.
-	ErrTransportRequired = errors.New("transport required (use -transport datachannel, -transport videochannel or -transport seichannel)")
+	ErrTransportRequired = errors.New("transport required (use -transport datachannel, -transport videochannel, -transport seichannel or -transport vp8channel)")
 	// ErrKeyRequired indicates that encryption key is not provided.
 	ErrKeyRequired = errors.New("key required (use -key <hex>)")
 	// ErrDNSServerRequired indicates that dns server is not provided.
@@ -81,6 +82,7 @@ func RegisterDefaults() {
 	transport.Register("datachannel", datachannel.New)
 	transport.Register("videochannel", videochannel.New)
 	transport.Register("seichannel", seichannel.New)
+	transport.Register("vp8channel", vp8channel.New)
 }
 
 // Validate verifies that the runtime config refers to registered components and all required fields are present.
