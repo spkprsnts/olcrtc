@@ -4,6 +4,7 @@ package videochannel
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/zarazaex69/b/go"
@@ -51,10 +52,23 @@ func renderVisualFrameB(payload []byte, width, height int) ([]byte, error) {
 	return rgba, nil
 }
 
+var frameCounter int
+
 func extractVisualPayloadB(frame []byte, width, height int) ([]byte, error) {
 	expectedSize := width * height * 4
 	if len(frame) != expectedSize {
 		return nil, fmt.Errorf("unexpected frame size: %d (expected %dx%dx4=%d)", len(frame), width, height, expectedSize)
+	}
+
+	if isWhiteFrame(frame) {
+		return nil, nil
+	}
+
+	frameCounter++
+	if frameCounter <= 3 {
+		fname := fmt.Sprintf("/tmp/b_frame_%d.rgba", frameCounter)
+		_ = writeFile(fname, frame)
+		logger.Debugf("saved non-white frame to %s", fname)
 	}
 
 	cfg := b.DefaultConfig()
@@ -65,4 +79,23 @@ func extractVisualPayloadB(frame []byte, width, height int) ([]byte, error) {
 	}
 
 	return decoded, nil
+}
+
+func isWhiteFrame(frame []byte) bool {
+	for i := 0; i < len(frame); i += 4 {
+		if frame[i] != 0xff || frame[i+1] != 0xff || frame[i+2] != 0xff {
+			return false
+		}
+	}
+	return true
+}
+
+func writeFile(path string, data []byte) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
 }
