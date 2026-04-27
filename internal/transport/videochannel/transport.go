@@ -390,7 +390,6 @@ func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc
 }
 
 func (p *streamTransport) handleFrame(frame []byte) {
-	logger.Debugf("videochannel handleFrame: len=%d videoCodec=%s", len(frame), p.videoCodec)
 	var payload []byte
 	var err error
 	if p.videoCodec == "b" {
