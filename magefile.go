@@ -40,12 +40,14 @@ func BuildCLI() error {
 	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch, false)
 }
 
-// BuildB builds olcrtc with b codec support (requires libb.so).
-func BuildB() error {
+// BuildCLIB builds the olcrtc CLI with b codec support (requires libb.so).
+func BuildCLIB() error {
 	mg.Deps(Deps)
 	mg.Deps(B.Build)
 	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch, true)
 }
+
+// TODO: BuildUIB, BuildB (cli+ui with b codec)
 
 // BuildUI builds the Fyne desktop UI binary.
 func BuildUI() error {
