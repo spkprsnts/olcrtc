@@ -39,8 +39,6 @@ type config struct {
 	videoQRSize     int
 	videoQRRecovery string
 	videoCodec     string
-	videoBModule   int
-	videoBColors   int
 	vp8FPS         int
 	vp8BatchSize   int
 }
@@ -121,8 +119,6 @@ func parseFlags() config {
 	flag.IntVar(&cfg.videoQRSize, "video-qr-size", 0, "Video QR code fragment size (videochannel only)")
 	flag.StringVar(&cfg.videoQRRecovery, "video-qr-recovery", "low", "QR error correction: low (7%), medium (15%), high (25%), highest (30%)")
 	flag.StringVar(&cfg.videoCodec, "video-codec", "qrcode", "Visual codec: qrcode (slow, stable) or b (fast, unstable)")
-	flag.IntVar(&cfg.videoBModule, "video-b-module", 4, "B codec pixels per module (default 4)")
-	flag.IntVar(&cfg.videoBColors, "video-b-colors", 8, "B codec colors (4, 8, 16, 32, 64, 128, 256)")
 	flag.IntVar(&cfg.vp8FPS, "vp8-fps", 0, "VP8 frames per second (vp8channel only, default 25)")
 	flag.IntVar(&cfg.vp8BatchSize, "vp8-batch", 0, "VP8 frames per tick (vp8channel only, default 1)")
 	flag.Parse()
@@ -180,8 +176,6 @@ func toSessionConfig(cfg config) session.Config {
 		VideoQRSize:     cfg.videoQRSize,
 		VideoQRRecovery: cfg.videoQRRecovery,
 		VideoCodec:     cfg.videoCodec,
-		VideoBModule:   cfg.videoBModule,
-		VideoBColors:   cfg.videoBColors,
 		VP8FPS:         cfg.vp8FPS,
 		VP8BatchSize:   cfg.vp8BatchSize,
 	}

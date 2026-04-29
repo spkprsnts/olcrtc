@@ -65,8 +65,6 @@ type streamTransport struct {
 	videoQRSize     int
 	videoQRRecovery string
 	videoCodec      string
-	videoBModule int
-	videoBColors int
 }
 
 // New creates a visual videochannel transport backed by a carrier-specific provider.
@@ -124,8 +122,6 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		videoQRSize:     qrSize,
 		videoQRRecovery: cfg.VideoQRRecovery,
 		videoCodec:      cfg.VideoCodec,
-		videoBModule: cfg.VideoBModule,
-		videoBColors: cfg.VideoBColors,
 	}
 
 	if err := stream.AddTrack(track); err != nil {
@@ -285,11 +281,7 @@ func (p *streamTransport) writerLoop() {
 
 			var rawFrame []byte
 			var err error
-			if p.videoCodec == "b" {
-				rawFrame, err = renderVisualFrameB(payload, p.videoW, p.videoH, p.videoBModule, p.videoBColors, p.videoQRRecovery)
-			} else {
-				rawFrame, err = renderVisualFrame(payload, p.videoW, p.videoH, p.videoQRRecovery)
-			}
+			rawFrame, err = renderVisualFrame(payload, p.videoW, p.videoH, p.videoQRRecovery)
 			if err != nil {
 				logger.Debugf("videochannel render error: %v", err)
 				continue
@@ -398,11 +390,7 @@ func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc
 func (p *streamTransport) handleFrame(frame []byte) {
 	var payload []byte
 	var err error
-	if p.videoCodec == "b" {
-		payload, err = extractVisualPayloadB(frame, p.videoW, p.videoH, p.videoBModule, p.videoBColors)
-	} else {
-		payload, err = extractVisualPayload(frame, p.videoW, p.videoH)
-	}
+	payload, err = extractVisualPayload(frame, p.videoW, p.videoH)
 	if err != nil || len(payload) == 0 {
 		if err != nil {
 			logger.Debugf("videochannel extract visual payload error: %v", err)
