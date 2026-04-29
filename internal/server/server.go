@@ -522,14 +522,10 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 	}()
 
 	buf := make([]byte, 16384)
-	totalSent := uint64(0)
 
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
-			if totalSent > 1024*1024 {
-				logger.Infof("sid=%d done total=%dMB", sid, totalSent/(1024*1024))
-			}
 			return
 		}
 
@@ -540,8 +536,6 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 		if err := s.mux.SendData(sid, buf[:n]); err != nil {
 			return
 		}
-
-		totalSent += uint64(n) //nolint:gosec
 	}
 }
 
