@@ -698,12 +698,16 @@ func (p *Peer) applyServerHelloConfig(serverHello map[string]interface{}) {
 		switch rawURLs := server["urls"].(type) {
 		case []interface{}:
 			for _, rawURL := range rawURLs {
-				if url, ok := rawURL.(string); ok && url != "" {
+				if url, ok := rawURL.(string); ok && url != "" && !strings.HasPrefix(url, "turn:") && !strings.HasPrefix(url, "turns:") {
 					urls = append(urls, url)
 				}
 			}
 		case []string:
-			urls = append(urls, rawURLs...)
+			for _, url := range rawURLs {
+				if !strings.HasPrefix(url, "turn:") && !strings.HasPrefix(url, "turns:") {
+					urls = append(urls, url)
+				}
+			}
 		}
 
 		if len(urls) == 0 {
