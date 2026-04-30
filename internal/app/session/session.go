@@ -48,7 +48,7 @@ var (
 	ErrVideoFPSRequired     = errors.New("video fps required for videochannel (use -video-fps)")
 	ErrVideoBitrateRequired = errors.New("video bitrate required for videochannel (use -video-bitrate)")
 	ErrVideoHWRequired      = errors.New("video hardware acceleration required for videochannel (use -video-hw none/nvenc)")
-	ErrVideoCodecInvalid    = errors.New("invalid video codec for videochannel (use -video-codec qrcode or -video-codec b)")
+	ErrVideoCodecInvalid    = errors.New("invalid video codec for videochannel (use -video-codec qrcode)")
 
 	// VP8channel errors
 	ErrVP8FPSRequired       = errors.New("vp8 fps required for vp8channel (use -vp8-fps)")
@@ -179,7 +179,7 @@ func Validate(cfg Config) error {
 		if cfg.VideoHW == "" {
 			return ErrVideoHWRequired
 		}
-		if cfg.VideoCodec != "" && cfg.VideoCodec != "qrcode" && cfg.VideoCodec != "b" {
+		if cfg.VideoCodec != "" && cfg.VideoCodec != "qrcode" {
 			return ErrVideoCodecInvalid
 		}
 	}

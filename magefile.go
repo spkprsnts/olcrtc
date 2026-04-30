@@ -19,7 +19,6 @@ const (
 	buildDir  = "build"
 	ldflags   = "-s -w"
 	goVersion = "1.25"
-	bRepo     = "github.com/zarazaex69/b"
 )
 
 var (
@@ -37,17 +36,8 @@ func Build() error {
 // BuildCLI builds the olcrtc server/client binary.
 func BuildCLI() error {
 	mg.Deps(Deps)
-	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch, false)
+	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch)
 }
-
-// BuildCLIB builds the olcrtc CLI with b codec support (requires libb.so).
-func BuildCLIB() error {
-	mg.Deps(Deps)
-	mg.Deps(B.Build)
-	return buildBinary("olcrtc", "./cmd/olcrtc", goos, goarch, true)
-}
-
-// TODO: BuildUIB, BuildB (cli+ui with b codec)
 
 // BuildUI builds the Fyne desktop UI binary.
 func BuildUI() error {
@@ -71,7 +61,7 @@ func Cross() error {
 	}
 
 	for _, t := range targets {
-		if err := buildBinary("olcrtc", "./cmd/olcrtc", t.os, t.arch, false); err != nil {
+		if err := buildBinary("olcrtc", "./cmd/olcrtc", t.os, t.arch); err != nil {
 			return err
 		}
 	}
@@ -134,7 +124,7 @@ func Mobile() error {
 	)
 }
 
-func buildBinary(name, pkg, os_, arch string, withB bool) error {
+func buildBinary(name, pkg, os_, arch string) error {
 	if err := ensureBuildDir(); err != nil {
 		return err
 	}
@@ -143,25 +133,14 @@ func buildBinary(name, pkg, os_, arch string, withB bool) error {
 	if os_ == "windows" {
 		ext = ".exe"
 	}
-	suffix := ""
-	if withB {
-		suffix = "-b"
-	}
-	outName := fmt.Sprintf("%s%s-%s-%s%s", name, suffix, os_, arch, ext)
+	outName := fmt.Sprintf("%s-%s-%s%s", name, os_, arch, ext)
 	out := filepath.Join(buildDir, outName)
-	fmt.Printf("building %s (%s/%s, b=%v) -> %s\n", name, os_, arch, withB, out)
+	fmt.Printf("building %s (%s/%s) -> %s\n", name, os_, arch, out)
 
 	env := map[string]string{
-		"GOOS":   os_,
-		"GOARCH": arch,
-	}
-
-	if withB {
-		env["CGO_ENABLED"] = "1"
-		bLibDir := bLibPath()
-		env["CGO_LDFLAGS"] = fmt.Sprintf("-L%s -Wl,-rpath,%s", bLibDir, bLibDir)
-	} else {
-		env["CGO_ENABLED"] = "0"
+		"GOOS":        os_,
+		"GOARCH":      arch,
+		"CGO_ENABLED": "0",
 	}
 
 	flags := ldflags
@@ -169,11 +148,7 @@ func buildBinary(name, pkg, os_, arch string, withB bool) error {
 		flags += " -checklinkname=0"
 	}
 
-	args := []string{"build", "-trimpath", "-ldflags", flags}
-	if withB {
-		args = append(args, "-tags", "b")
-	}
-	args = append(args, "-o", out, pkg)
+	args := []string{"build", "-trimpath", "-ldflags", flags, "-o", out, pkg}
 
 	return sh.RunWithV(env, goexe, args...)
 }
@@ -211,69 +186,6 @@ func buildUIBinary(os_, arch string) error {
 
 	return cmd.Run()
 }
-
-type B mg.Namespace
-
-func bLibPath() string {
-	return filepath.Join(buildDir, "lib")
-}
-
-func bSrcPath() string {
-	return filepath.Join(buildDir, "b-src")
-}
-
-func (B) Build() error {
-	if err := ensureBuildDir(); err != nil {
-		return err
-	}
-
-	libDir := bLibPath()
-	libPath := filepath.Join(libDir, "libb.so")
-	if _, err := os.Stat(libPath); err == nil {
-		fmt.Println("libb.so already exists, skipping build")
-		return nil
-	}
-
-	srcDir := bSrcPath()
-	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
-		fmt.Println("cloning b repository...")
-		if err := sh.RunV("git", "clone", "--depth=1", "https://"+bRepo, srcDir); err != nil {
-			return fmt.Errorf("failed to clone b: %w", err)
-		}
-	}
-
-	fmt.Println("building libb.so with cargo...")
-	if err := sh.RunV("cargo", "build", "--release", "--manifest-path", filepath.Join(srcDir, "Cargo.toml")); err != nil {
-		return fmt.Errorf("cargo build failed: %w", err)
-	}
-
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		return err
-	}
-
-	srcLib := filepath.Join(srcDir, "target", "release", "libb.so")
-	if err := sh.Copy(libPath, srcLib); err != nil {
-		return fmt.Errorf("failed to copy libb.so: %w", err)
-	}
-
-	fmt.Printf("libb.so installed to %s\n", libPath)
-	return nil
-}
-
-func (B) Clean() error {
-	srcDir := bSrcPath()
-	if _, err := os.Stat(srcDir); err == nil {
-		if err := os.RemoveAll(srcDir); err != nil {
-			return err
-		}
-	}
-	libPath := filepath.Join(bLibPath(), "libb.so")
-	if _, err := os.Stat(libPath); err == nil {
-		return os.Remove(libPath)
-	}
-	return nil
-}
-
 
 func ensureBuildDir() error {
 	return os.MkdirAll(buildDir, 0o755)

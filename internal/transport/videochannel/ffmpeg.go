@@ -134,7 +134,7 @@ type ffmpegEncoder struct {
 	err       error
 }
 
-func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw, visualCodec string) (*ffmpegEncoder, error) {
+func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string) (*ffmpegEncoder, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
@@ -158,10 +158,6 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw, visua
 
 	inputPixFmt := "gray"
 	frameSize := width * height
-	if visualCodec == "b" {
-		inputPixFmt = "rgba"
-		frameSize = width * height * 4
-	}
 
 	args = append(args,
 		"-f", "rawvideo",
@@ -345,7 +341,7 @@ type ffmpegDecoder struct {
 	err       error
 }
 
-func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw, visualCodec string) (*ffmpegDecoder, error) {
+func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw string) (*ffmpegDecoder, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
@@ -364,10 +360,6 @@ func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw, visualCodec st
 
 	outputPixFmt := "gray"
 	frameSize := width * height
-	if visualCodec == "b" {
-		outputPixFmt = "rgba"
-		frameSize = width * height * 4
-	}
 
 	args := []string{"-loglevel", "info"}
 	if spec.mimeType == webrtc.MimeTypeH264 {
