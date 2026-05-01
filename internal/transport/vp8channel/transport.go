@@ -32,11 +32,12 @@ var (
 	ErrTransportClosed       = errors.New("vp8channel transport closed")
 )
 
-// vp8Keepalive is a minimal VP8 inter-frame (P-frame, P-bit=1) used as
-// idle filler. It must not be a keyframe, otherwise the SFU treats it as
-// a key reference and forwards it aggressively to all subscribers.
+// vp8Keepalive is a minimal VP8 keyframe used as idle filler. It must be
+// a keyframe (P-bit=0) so that the SFU/decoder has a valid reference and
+// forwards subsequent frames; switching to a P-frame here causes the SFU
+// to drop the entire stream until a keyframe arrives.
 var vp8Keepalive = []byte{
-	0x31, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
+	0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
 	0x10, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88,
 	0x99, 0x84, 0x88, 0xfc,
 }
