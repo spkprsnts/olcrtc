@@ -22,6 +22,9 @@ const (
 	defaultConnectTimeout = 30 * time.Second
 	dataMarker            = 0xFF
 	rtpBufSize            = 65536
+	outboundQueueSize     = 1024
+	canSendHighWatermark  = 90 // percent
+	keepaliveIdlePeriod   = 100 * time.Millisecond
 )
 
 var (
@@ -29,8 +32,11 @@ var (
 	ErrTransportClosed       = errors.New("vp8channel transport closed")
 )
 
+// vp8Keepalive is a minimal VP8 inter-frame (P-frame, P-bit=1) used as
+// idle filler. It must not be a keyframe, otherwise the SFU treats it as
+// a key reference and forwards it aggressively to all subscribers.
 var vp8Keepalive = []byte{
-	0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
+	0x31, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
 	0x10, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88,
 	0x99, 0x84, 0x88, 0xfc,
 }
@@ -91,7 +97,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		stream:        stream,
 		track:         track,
 		onData:        cfg.OnData,
-		outbound:      make(chan []byte, 256),
+		outbound:      make(chan []byte, outboundQueueSize),
 		closeCh:       make(chan struct{}),
 		writerDone:    make(chan struct{}),
 		frameInterval: time.Second / time.Duration(fps),
@@ -180,7 +186,8 @@ func (p *streamTransport) WatchConnection(ctx context.Context) {
 }
 
 func (p *streamTransport) CanSend() bool {
-	return !p.closed.Load() && p.stream.CanSend() && len(p.outbound) < cap(p.outbound)/2
+	return !p.closed.Load() && p.stream.CanSend() &&
+		len(p.outbound) < cap(p.outbound)*canSendHighWatermark/100
 }
 
 func (p *streamTransport) Features() transport.Features {
@@ -195,36 +202,47 @@ func (p *streamTransport) Features() transport.Features {
 func (p *streamTransport) writerLoop() {
 	defer close(p.writerDone)
 
-	ticker := time.NewTicker(p.frameInterval)
+	// Send each sample at the wire-level rate (fps * batchSize) instead of
+	// bursting batchSize samples per frame interval. Bursting makes RTP
+	// timestamps disagree with wall-clock arrival, which the SFU interprets
+	// as huge jitter and starts throttling the stream after a few seconds.
+	sampleInterval := p.frameInterval / time.Duration(p.batchSize)
+	if sampleInterval <= 0 {
+		sampleInterval = p.frameInterval
+	}
+
+	ticker := time.NewTicker(sampleInterval)
 	defer ticker.Stop()
 
-	sampleDuration := p.frameInterval / time.Duration(p.batchSize)
+	keepaliveEvery := int(keepaliveIdlePeriod / sampleInterval)
+	if keepaliveEvery < 1 {
+		keepaliveEvery = 1
+	}
+	idleTicks := 0
 
 	for {
 		select {
 		case <-p.closeCh:
 			return
 		case <-ticker.C:
-			sent := 0
-			for sent < p.batchSize {
-				var sample []byte
-				select {
-				case frame := <-p.outbound:
-					sample = frame
-				default:
-					sample = vp8Keepalive
+			var sample []byte
+			select {
+			case frame := <-p.outbound:
+				sample = frame
+				idleTicks = 0
+			default:
+				idleTicks++
+				if idleTicks < keepaliveEvery {
+					continue
 				}
-
-				_ = p.track.WriteSample(media.Sample{
-					Data:     sample,
-					Duration: sampleDuration,
-				})
-				sent++
-
-				if sample[0] != dataMarker {
-					break
-				}
+				idleTicks = 0
+				sample = vp8Keepalive
 			}
+
+			_ = p.track.WriteSample(media.Sample{
+				Data:     sample,
+				Duration: sampleInterval,
+			})
 		}
 	}
 }
