@@ -23,6 +23,7 @@ const (
 	dataMarker            = 0xFF
 	rtpBufSize            = 65536
 	outboundQueueSize     = 1024
+	inboundQueueSize      = 1024
 	canSendHighWatermark  = 90 // percent
 	keepaliveIdlePeriod   = 100 * time.Millisecond
 )
@@ -47,10 +48,13 @@ type streamTransport struct {
 	track         *webrtc.TrackLocalStaticSample
 	onData        func([]byte)
 	outbound      chan []byte
+	inbound       chan []byte
 	closeCh       chan struct{}
 	writerDone    chan struct{}
+	dispatchDone  chan struct{}
 	closed        atomic.Bool
 	writerUp      atomic.Bool
+	dispatchUp    atomic.Bool
 	startOnce     sync.Once
 	frameInterval time.Duration
 	batchSize     int
@@ -99,8 +103,10 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		track:         track,
 		onData:        cfg.OnData,
 		outbound:      make(chan []byte, outboundQueueSize),
+		inbound:       make(chan []byte, inboundQueueSize),
 		closeCh:       make(chan struct{}),
 		writerDone:    make(chan struct{}),
+		dispatchDone:  make(chan struct{}),
 		frameInterval: time.Second / time.Duration(fps),
 		batchSize:     batchSize,
 	}
@@ -124,6 +130,8 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 	p.startOnce.Do(func() {
 		p.writerUp.Store(true)
 		go p.writerLoop()
+		p.dispatchUp.Store(true)
+		go p.dispatchLoop()
 	})
 
 	return nil
@@ -149,6 +157,9 @@ func (p *streamTransport) Close() error {
 		close(p.closeCh)
 		if p.writerUp.Load() {
 			<-p.writerDone
+		}
+		if p.dispatchUp.Load() {
+			<-p.dispatchDone
 		}
 		return p.stream.Close()
 	}
@@ -271,6 +282,10 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 	var frameBuf []byte
 	buf := make([]byte, rtpBufSize)
 
+	var lastSeq uint16
+	var haveLastSeq bool
+	frameValid := false
+
 	for {
 		n, _, err := track.Read(buf)
 		if err != nil {
@@ -282,20 +297,71 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 			continue
 		}
 
+		// Detect packet loss / reordering. A single missing RTP packet
+		// inside a fragmented VP8 frame would otherwise silently corrupt
+		// the assembled payload (and bleed into the next frame), so we
+		// invalidate the current assembly and only resume on a fresh
+		// start-of-partition packet.
+		if haveLastSeq {
+			expected := lastSeq + 1
+			if pkt.SequenceNumber != expected {
+				frameValid = false
+				frameBuf = frameBuf[:0]
+			}
+		}
+		lastSeq = pkt.SequenceNumber
+		haveLastSeq = true
+
 		vp8Payload, err := vp8Pkt.Unmarshal(pkt.Payload)
 		if err != nil {
+			frameValid = false
+			frameBuf = frameBuf[:0]
 			continue
 		}
 
 		if vp8Pkt.S == 1 {
 			frameBuf = frameBuf[:0]
+			frameValid = true
 		}
+
+		if !frameValid {
+			continue
+		}
+
 		frameBuf = append(frameBuf, vp8Payload...)
 
 		if pkt.Marker {
 			data := extractDataFromPayload(frameBuf)
-			if data != nil && p.onData != nil {
-				p.onData(data)
+			frameBuf = frameBuf[:0]
+			frameValid = false
+			if data == nil {
+				continue
+			}
+			// Copy out of the shared frame buffer before handing the
+			// payload to the dispatch goroutine.
+			payload := make([]byte, len(data))
+			copy(payload, data)
+
+			// Non-blocking enqueue: dropping is preferable to stalling
+			// the RTP read loop, which would let pion's UDP buffer
+			// overflow and cause cascading packet loss.
+			select {
+			case p.inbound <- payload:
+			default:
+			}
+		}
+	}
+}
+
+func (p *streamTransport) dispatchLoop() {
+	defer close(p.dispatchDone)
+	for {
+		select {
+		case <-p.closeCh:
+			return
+		case payload := <-p.inbound:
+			if p.onData != nil {
+				p.onData(payload)
 			}
 		}
 	}
