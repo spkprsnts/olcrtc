@@ -527,8 +527,8 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 			return
 		}
 
-		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok && !pubSent {
-			if err := p.handleSdpOffer(offer, uid); err != nil {
+		if offer, ok := msg["subscriberSdpOffer"].(map[string]interface{}); ok {
+			if err := p.handleSdpOffer(offer, uid, !pubSent); err != nil {
 				logger.Debugf("sdp offer error: %v", err)
 				continue
 			}
@@ -586,7 +586,7 @@ func (p *Peer) handleCommonMessages(msg map[string]interface{}, uid string) {
 	}
 }
 
-func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string) error {
+func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string, sendPub bool) error {
 	sdp, _ := offer["sdp"].(string)
 	pcSeq, _ := offer["pcSeq"].(float64)
 
@@ -622,6 +622,10 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string) error {
 		if err := p.sendSetSlots(); err != nil {
 			logger.Debugf("setSlots error: %v", err)
 		}
+	}
+
+	if !sendPub {
+		return nil
 	}
 
 	time.Sleep(300 * time.Millisecond)
