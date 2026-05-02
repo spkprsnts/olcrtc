@@ -519,27 +519,18 @@ func (s *Server) dial(req ConnectRequest) (net.Conn, error) {
 }
 
 func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
-	start := time.Now()
-	var totalBytes uint64
-	var totalReads uint64
-	var lastReadAt time.Time = start
-	var exitReason string
-
 	defer func() {
 		s.activeClients.Add(-1)
 		_ = s.mux.CloseStream(sid)
 		s.connMu.Lock()
 		delete(s.connections, sid)
 		s.connMu.Unlock()
-		logger.Infof("sid=%d pumpToMux exit reason=%s bytes=%d reads=%d uptime=%v sinceLastRead=%v",
-			sid, exitReason, totalBytes, totalReads,
-			time.Since(start), time.Since(lastReadAt))
 	}()
 
 	// Decoupling queue: Read goroutine pushes here, sender goroutine drains
 	// to mux.SendData. Without this, slow channel back-pressure stalls the
 	// upstream Read which can cause TCP receive window to collapse to zero
-	// and effectively wedge the connection (selectel stops sending and never
+	// and effectively wedge the connection (peer stops sending and never
 	// resumes even though our channel is healthy).
 	type chunk struct{ data []byte }
 	queue := make(chan chunk, 64)
@@ -557,10 +548,10 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 		}
 	}()
 
-	// queueHasSpace blocks until the decoupling queue has room or we're
-	// shutting down. We deliberately wait *before* arming the upstream
-	// read deadline so that channel back-pressure does not get billed to
-	// the upstream socket as idle time and trip a spurious i/o timeout.
+	// queueHasSpace blocks until the decoupling queue has room or the
+	// sender goroutine has exited. We wait here *before* arming the
+	// upstream read deadline so that channel back-pressure isn't billed
+	// to the socket as idle time and doesn't trip a spurious i/o timeout.
 	queueHasSpace := func() bool {
 		for {
 			if len(queue) < cap(queue) {
@@ -574,28 +565,6 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 		}
 	}
 
-	// Periodic read stats so we can see throughput per-sid in real time.
-	statsTicker := time.NewTicker(5 * time.Second)
-	defer statsTicker.Stop()
-	statsStop := make(chan struct{})
-	var statsLastBytes uint64
-	go func() {
-		for {
-			select {
-			case <-statsStop:
-				return
-			case <-statsTicker.C:
-				cur := atomic.LoadUint64(&totalBytes)
-				delta := cur - statsLastBytes
-				statsLastBytes = cur
-				idle := time.Since(lastReadAt)
-				logger.Infof("sid=%d upstream rx[5s]: bytes=%d total=%d reads=%d idle=%v queueLen=%d",
-					sid, delta, cur, atomic.LoadUint64(&totalReads), idle, len(queue))
-			}
-		}
-	}()
-	defer close(statsStop)
-
 	buf := make([]byte, 16384)
 
 	// Idle timeout for genuinely dead upstreams. Only armed when we are
@@ -605,34 +574,23 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 	const idleReadTimeout = 60 * time.Second
 
 	for {
-		// Wait until the decoupling queue has space *before* reading from
-		// upstream. While we are blocked here we leave the read deadline
-		// disarmed so a slow vp8 channel cannot kill a healthy TCP socket.
 		if !queueHasSpace() {
-			exitReason = "sender goroutine exited"
 			close(queue)
 			<-doneSender
 			return
 		}
 
-		// Arm the deadline only now, when we actually want bytes from the
-		// peer. If the peer is alive, Read returns quickly and we re-arm
-		// on the next loop. If the peer truly went silent, we surface
-		// i/o timeout after idleReadTimeout instead of hanging forever.
+		// Arm the deadline only when we actually want bytes from the peer.
 		_ = conn.SetReadDeadline(time.Now().Add(idleReadTimeout))
 
 		n, err := conn.Read(buf)
 		if err != nil {
-			exitReason = fmt.Sprintf("read error: %v", err)
 			close(queue)
 			<-doneSender
 			return
 		}
-		atomic.AddUint64(&totalBytes, uint64(n))
-		atomic.AddUint64(&totalReads, 1)
-		lastReadAt = time.Now()
 
-		// Clear the deadline so it does not fire while we are blocked in
+		// Clear the deadline so it doesn't fire while we are blocked in
 		// queueHasSpace() on the next iteration (back-pressure path).
 		_ = conn.SetReadDeadline(time.Time{})
 
@@ -641,8 +599,7 @@ func (s *Server) pumpToMux(sid uint16, conn net.Conn) {
 		copy(c, buf[:n])
 
 		// Guaranteed non-blocking thanks to queueHasSpace() above (we are
-		// the sole producer). Falling back to a blocking send is still
-		// safe but should never be needed.
+		// the sole producer); the blocking fallback is just defensive.
 		select {
 		case queue <- chunk{data: c}:
 		default:
