@@ -15,7 +15,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 
-	_ "golang.org/x/mobile/bind" // ensure gomobile bind is available
+	_ "golang.org/x/mobile/bind"                       // ensure gomobile bind is available
+	_ "google.golang.org/genproto/protobuf/field_mask" // keep gomobile on post-split genproto modules
 )
 
 // SocketProtector protects sockets from VPN routing on Android.
@@ -37,6 +38,13 @@ var (
 	errNotRunning         = errors.New("olcRTC is not running")
 	errStoppedBeforeReady = errors.New("olcRTC stopped before becoming ready")
 	errStartTimedOut      = errors.New("olcRTC start timed out")
+)
+
+const (
+	defaultLink      = "direct"
+	defaultTransport = "vp8channel"
+	dataTransport    = "datachannel"
+	defaultDNSServer = "1.1.1.1:53"
 )
 
 //nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
@@ -144,7 +152,11 @@ func Start(carrierName, roomID, keyHex string, socksPort int, socksUser, socksPa
 }
 
 // StartWithTransport launches the client with an explicit transport for this start.
-func StartWithTransport(carrierName, transportName, roomID, keyHex string, socksPort int, socksUser, socksPass string) error {
+func StartWithTransport(
+	carrierName, transportName, roomID, keyHex string,
+	socksPort int,
+	socksUser, socksPass string,
+) error {
 	mu.Lock()
 	ensureDefaultConfigLocked()
 	cfg := defaults
@@ -154,7 +166,12 @@ func StartWithTransport(carrierName, transportName, roomID, keyHex string, socks
 	return startWithConfig(carrierName, transportName, roomID, keyHex, socksPort, socksUser, socksPass, cfg)
 }
 
-func startWithConfig(carrierName, transportName, roomID, keyHex string, socksPort int, socksUser, socksPass string, cfg mobileConfig) error {
+func startWithConfig(
+	carrierName, transportName, roomID, keyHex string,
+	socksPort int,
+	socksUser, socksPass string,
+	cfg mobileConfig,
+) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -313,9 +330,9 @@ func registerDefaults() {
 func ensureDefaultConfigLocked() {
 	defaultsSet.Do(func() {
 		defaults = mobileConfig{
-			link:         "direct",
-			transport:    "vp8channel",
-			dnsServer:    "1.1.1.1:53",
+			link:         defaultLink,
+			transport:    defaultTransport,
+			dnsServer:    defaultDNSServer,
 			vp8FPS:       60,
 			vp8BatchSize: 8,
 		}
@@ -324,12 +341,12 @@ func ensureDefaultConfigLocked() {
 
 func normalizeTransport(value string) string {
 	switch value {
-	case "datachannel", "data", "dc":
-		return "datachannel"
-	case "vp8channel", "vp8":
-		return "vp8channel"
+	case dataTransport, "data", "dc":
+		return dataTransport
+	case defaultTransport, "vp8":
+		return defaultTransport
 	default:
-		return "vp8channel"
+		return defaultTransport
 	}
 }
 
