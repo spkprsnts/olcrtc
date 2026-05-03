@@ -23,6 +23,15 @@ issues? contact us at [@openlibrecommunity](https://t.me/openlibrecommunity)
 <br>
 or wait for the release or at least a release
 
+## Read docs for start 
+
+[for noobs](docs/fast.md)
+
+[manual](docs/manual.md)
+
+[setting matrix](docs/settings.md)
+
+
 
 ## build
 
@@ -54,17 +63,6 @@ mage lint
 mage test
 mage clean
 
-```
-
-
-## fast start
-
-```bash
-# server ( podman, pre configured, easy, unix )
-./script/srv.sh
-
-# client ( podman, pre configured, easy, unix )  
-./script/cnc.sh
 ```
 
 <div align="center">
