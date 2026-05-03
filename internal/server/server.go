@@ -282,7 +282,7 @@ func (s *Server) serve(ctx context.Context) {
 			default:
 			}
 			logger.Infof("AcceptStream returned %v — waiting for new session", err)
-			time.Sleep(100 * time.Millisecond)
+			s.waitForNewSession(ctx, sess)
 			continue
 		}
 
@@ -291,6 +291,22 @@ func (s *Server) serve(ctx context.Context) {
 			defer s.wg.Done()
 			s.handleStream(ctx, stream)
 		}()
+	}
+}
+
+func (s *Server) waitForNewSession(ctx context.Context, dead *smux.Session) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+		s.sessMu.RLock()
+		current := s.session
+		s.sessMu.RUnlock()
+		if current != dead {
+			return
+		}
 	}
 }
 
