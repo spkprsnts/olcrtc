@@ -41,7 +41,7 @@ func newKCPConn(out chan<- []byte, inboundCap int) *kcpConn {
 }
 
 // deliver hands an incoming wire payload to the KCP read loop. Drops on
-// overflow are intentional — KCP will detect the loss via SACK and retransmit.
+// overflow are intentional - KCP will detect the loss via SACK and retransmit.
 func (c *kcpConn) deliver(payload []byte) {
 	cp := make([]byte, len(payload))
 	copy(cp, payload)

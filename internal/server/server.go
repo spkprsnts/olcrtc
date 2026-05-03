@@ -229,7 +229,7 @@ func (s *Server) installSession() {
 }
 
 func (s *Server) handleReconnect() {
-	logger.Infof("server link reconnect — tearing down smux session")
+	logger.Infof("server link reconnect - tearing down smux session")
 	s.sessMu.RLock()
 	current := s.session
 	s.sessMu.RUnlock()
@@ -296,7 +296,7 @@ func (s *Server) serve(ctx context.Context) {
 				return
 			default:
 			}
-			logger.Infof("AcceptStream returned %v — reinstalling session", err)
+			logger.Infof("AcceptStream returned %v - reinstalling session", err)
 			s.reinstallSession(sess)
 			continue
 		}

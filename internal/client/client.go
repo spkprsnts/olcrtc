@@ -225,7 +225,7 @@ func smuxConfig() *smux.Config {
 }
 
 func (c *Client) handleReconnect() {
-	logger.Infof("client link reconnect — tearing down smux session")
+	logger.Infof("client link reconnect - tearing down smux session")
 	c.sessMu.Lock()
 	if c.session != nil {
 		_ = c.session.Close()

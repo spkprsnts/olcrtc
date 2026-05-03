@@ -12,7 +12,7 @@ import (
 )
 
 // Both peers establish a KCP session with the same convid. KCP does not
-// require a handshake — packets are matched by conv field, so a static
+// require a handshake - packets are matched by conv field, so a static
 // constant gives us a symmetrical P2P setup.
 const kcpConvID = 0xC0FFEE01
 
@@ -24,7 +24,7 @@ const (
 	kcpMTU = 1400
 
 	// Receive/send window in segments. Large window allows in-flight bursts
-	// without stalling — important when one VP8 frame may carry many KCP
+	// without stalling - important when one VP8 frame may carry many KCP
 	// segments and ACKs trickle back at frame cadence.
 	kcpSndWnd = 4096
 	kcpRcvWnd = 4096
@@ -99,7 +99,7 @@ func (r *kcpRuntime) readLoop(onData func([]byte)) {
 			continue
 		}
 		if size > kcpMaxMessage {
-			// Stream framing is now corrupted — there is no safe way to
+			// Stream framing is now corrupted - there is no safe way to
 			// resync without a session reset. Bail and let the upper layer
 			// reconnect.
 			return
