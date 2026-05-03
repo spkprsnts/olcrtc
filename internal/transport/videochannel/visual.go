@@ -1,12 +1,16 @@
 package videochannel
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	grqr "github.com/zarazaex69/gr/qr"
 	grtile "github.com/zarazaex69/gr/tile"
 )
+
+// ErrUnexpectedQRFrameSize is returned when the decoded frame size does not match the expected dimensions.
+var ErrUnexpectedQRFrameSize = errors.New("unexpected qr frame size")
 
 func eccLevel(level string) grqr.ECCLevel {
 	switch level {
@@ -21,7 +25,12 @@ func eccLevel(level string) grqr.ECCLevel {
 	}
 }
 
-func renderVisualFrame(payload []byte, width, height int, codec, recoveryLevel string, tileModule, tileRS int) ([]byte, error) {
+func renderVisualFrame(
+	payload []byte,
+	width, height int,
+	codec, recoveryLevel string,
+	tileModule, tileRS int,
+) ([]byte, error) {
 	if codec == "tile" {
 		return renderTileFrame(payload, tileModule, tileRS)
 	}
@@ -47,7 +56,11 @@ func renderQRFrame(payload []byte, width, height int, recoveryLevel string) ([]b
 		return nil, fmt.Errorf("qr codec: %w", err)
 	}
 
-	return c.Encode(payload)
+	result, err := c.Encode(payload)
+	if err != nil {
+		return nil, fmt.Errorf("qr encode: %w", err)
+	}
+	return result, nil
 }
 
 func renderTileFrame(payload []byte, tileModule, tileRS int) ([]byte, error) {
@@ -64,7 +77,11 @@ func renderTileFrame(payload []byte, tileModule, tileRS int) ([]byte, error) {
 		return nil, fmt.Errorf("tile codec: %w", err)
 	}
 
-	return c.Encode(payload, 0, 1)
+	result, err := c.Encode(payload, 0, 1)
+	if err != nil {
+		return nil, fmt.Errorf("tile encode: %w", err)
+	}
+	return result, nil
 }
 
 func extractVisualPayload(frame []byte, width, height int, codec string, tileModule, tileRS int) ([]byte, error) {
@@ -76,7 +93,8 @@ func extractVisualPayload(frame []byte, width, height int, codec string, tileMod
 
 func extractQRPayload(frame []byte, width, height int) ([]byte, error) {
 	if len(frame) != width*height {
-		return nil, fmt.Errorf("unexpected frame size: %d (expected %dx%d=%d)", len(frame), width, height, width*height)
+		return nil, fmt.Errorf("%w: got %d expected %dx%d=%d",
+			ErrUnexpectedQRFrameSize, len(frame), width, height, width*height)
 	}
 
 	c, err := grqr.New(grqr.Config{
@@ -111,7 +129,7 @@ func extractTilePayload(frame []byte, tileModule, tileRS int) ([]byte, error) {
 
 	result, err := c.Decode(frame)
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr
 	}
 
 	return result.Payload, nil

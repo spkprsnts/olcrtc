@@ -7,10 +7,7 @@ import (
 
 func TestSEIRoundTrip(t *testing.T) {
 	payload := []byte("hello over seichannel")
-	accessUnit, err := buildVideoAccessUnit(payload)
-	if err != nil {
-		t.Fatalf("buildVideoAccessUnit failed: %v", err)
-	}
+	accessUnit := buildVideoAccessUnit(payload)
 
 	got, err := extractVideoPayloads(accessUnit)
 	if err != nil {

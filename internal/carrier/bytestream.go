@@ -2,6 +2,7 @@ package carrier
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openlibrecommunity/olcrtc/internal/provider"
 	"github.com/pion/webrtc/v4"
@@ -32,6 +33,11 @@ type VideoTrack interface {
 	SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver))
 }
 
+type videoTrackProvider interface {
+	provider.Provider
+	provider.VideoTrackCapable
+}
+
 type legacySession struct {
 	provider provider.Provider
 }
@@ -39,7 +45,7 @@ type legacySession struct {
 // Capabilities reports the transport primitives supported by the legacy carrier.
 func (s *legacySession) Capabilities() Capabilities {
 	caps := Capabilities{ByteStream: true}
-	_, caps.VideoTrack = s.provider.(provider.VideoTrackCapable)
+	_, caps.VideoTrack = s.provider.(videoTrackProvider)
 	return caps
 }
 
@@ -50,20 +56,35 @@ func (s *legacySession) OpenByteStream() (ByteStream, error) {
 
 // OpenVideoTrack adapts a legacy provider to the generic video track capability.
 func (s *legacySession) OpenVideoTrack() (VideoTrack, error) {
-	publisher, ok := s.provider.(provider.VideoTrackCapable)
+	vtp, ok := s.provider.(videoTrackProvider)
 	if !ok {
 		return nil, ErrVideoTrackUnsupported
 	}
-	return &legacyVideoTrack{provider: publisher}, nil
+	return &legacyVideoTrack{provider: vtp}, nil
 }
 
 type legacyByteStream struct {
 	provider provider.Provider
 }
 
-func (p *legacyByteStream) Connect(ctx context.Context) error { return p.provider.Connect(ctx) }
-func (p *legacyByteStream) Send(data []byte) error            { return p.provider.Send(data) }
-func (p *legacyByteStream) Close() error                      { return p.provider.Close() }
+func (p *legacyByteStream) Connect(ctx context.Context) error {
+	if err := p.provider.Connect(ctx); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	return nil
+}
+func (p *legacyByteStream) Send(data []byte) error {
+	if err := p.provider.Send(data); err != nil {
+		return fmt.Errorf("send: %w", err)
+	}
+	return nil
+}
+func (p *legacyByteStream) Close() error {
+	if err := p.provider.Close(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	return nil
+}
 
 func (p *legacyByteStream) SetReconnectCallback(cb func()) {
 	p.provider.SetReconnectCallback(func(_ *webrtc.DataChannel) {
@@ -81,31 +102,38 @@ func (p *legacyByteStream) WatchConnection(ctx context.Context) {
 func (p *legacyByteStream) CanSend() bool { return p.provider.CanSend() }
 
 type legacyVideoTrack struct {
-	provider provider.VideoTrackCapable
+	provider videoTrackProvider
 }
 
 func (v *legacyVideoTrack) Connect(ctx context.Context) error {
-	return v.provider.(provider.Provider).Connect(ctx)
+	if err := v.provider.Connect(ctx); err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	return nil
 }
-func (v *legacyVideoTrack) Close() error { return v.provider.(provider.Provider).Close() }
-func (v *legacyVideoTrack) SetShouldReconnect(fn func() bool) {
-	v.provider.(provider.Provider).SetShouldReconnect(fn)
+func (v *legacyVideoTrack) Close() error {
+	if err := v.provider.Close(); err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+	return nil
 }
-func (v *legacyVideoTrack) SetEndedCallback(cb func(string)) {
-	v.provider.(provider.Provider).SetEndedCallback(cb)
-}
+func (v *legacyVideoTrack) SetShouldReconnect(fn func() bool) { v.provider.SetShouldReconnect(fn) }
+func (v *legacyVideoTrack) SetEndedCallback(cb func(string))  { v.provider.SetEndedCallback(cb) }
 func (v *legacyVideoTrack) WatchConnection(ctx context.Context) {
-	v.provider.(provider.Provider).WatchConnection(ctx)
+	v.provider.WatchConnection(ctx)
 }
-func (v *legacyVideoTrack) CanSend() bool { return v.provider.(provider.Provider).CanSend() }
+func (v *legacyVideoTrack) CanSend() bool { return v.provider.CanSend() }
 func (v *legacyVideoTrack) AddTrack(track webrtc.TrackLocal) error {
-	return v.provider.AddVideoTrack(track)
+	if err := v.provider.AddVideoTrack(track); err != nil {
+		return fmt.Errorf("add track: %w", err)
+	}
+	return nil
 }
 func (v *legacyVideoTrack) SetTrackHandler(cb func(*webrtc.TrackRemote, *webrtc.RTPReceiver)) {
 	v.provider.SetVideoTrackHandler(cb)
 }
 func (v *legacyVideoTrack) SetReconnectCallback(cb func()) {
-	v.provider.(provider.Provider).SetReconnectCallback(func(_ *webrtc.DataChannel) {
+	v.provider.SetReconnectCallback(func(_ *webrtc.DataChannel) {
 		if cb != nil {
 			cb()
 		}

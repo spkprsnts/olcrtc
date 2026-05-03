@@ -1,3 +1,4 @@
+// Package vp8channel provides byte transport over VP8 video frames using KCP.
 package vp8channel
 
 import (
@@ -58,7 +59,7 @@ type kcpRuntime struct {
 func startKCP(out chan<- []byte, onData func([]byte)) (*kcpRuntime, error) {
 	c := newKCPConn(out, inboundQueueSize)
 
-	sess, err := kcp.NewConn3(kcpConvID, fakeAddr, nil, 0, 0, c)
+	sess, err := kcp.NewConn3(kcpConvID, fakeUDPAddr(), nil, 0, 0, c)
 	if err != nil {
 		_ = c.Close()
 		return nil, fmt.Errorf("kcp new conn: %w", err)
@@ -71,7 +72,6 @@ func startKCP(out chan<- []byte, onData func([]byte)) (*kcpRuntime, error) {
 	sess.SetNoDelay(1, 10, 2, 1)
 	sess.SetWindowSize(kcpSndWnd, kcpRcvWnd)
 	sess.SetMtu(kcpMTU)
-	sess.SetStreamMode(true) // see kcpLenPrefix comment above
 	sess.SetACKNoDelay(true)
 	sess.SetWriteDelay(false)
 
@@ -127,16 +127,17 @@ func (r *kcpRuntime) send(msg []byte) error {
 		return ErrKCPMessageTooLarge
 	}
 	var hdr [kcpLenPrefix]byte
+	//nolint:gosec
 	binary.BigEndian.PutUint32(hdr[:], uint32(len(msg)))
 
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 
 	if _, err := r.sess.Write(hdr[:]); err != nil {
-		return err
+		return fmt.Errorf("kcp write header: %w", err)
 	}
 	if _, err := r.sess.Write(msg); err != nil {
-		return err
+		return fmt.Errorf("kcp write payload: %w", err)
 	}
 	return nil
 }

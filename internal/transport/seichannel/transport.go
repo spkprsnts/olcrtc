@@ -40,6 +40,18 @@ var (
 	ErrAckTimeout = errors.New("seichannel ack timeout")
 	// ErrTransportClosed is returned when operations are attempted on a closed transport.
 	ErrTransportClosed = errors.New("seichannel transport closed")
+	// ErrFrameTooShort is returned when the received frame is too short to decode.
+	ErrFrameTooShort = errors.New("frame too short")
+	// ErrUnexpectedMagic is returned when the frame magic bytes do not match.
+	ErrUnexpectedMagic = errors.New("unexpected frame magic")
+	// ErrUnexpectedVersion is returned when the frame protocol version does not match.
+	ErrUnexpectedVersion = errors.New("unexpected frame version")
+	// ErrAckTooShort is returned when the ack frame is shorter than expected.
+	ErrAckTooShort = errors.New("ack frame too short")
+	// ErrDataTooShort is returned when the data frame is shorter than expected.
+	ErrDataTooShort = errors.New("data frame too short")
+	// ErrUnexpectedFrameType is returned for unknown frame type bytes.
+	ErrUnexpectedFrameType = errors.New("unexpected frame type")
 )
 
 type transportFrame struct {
@@ -144,7 +156,7 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 	defer cancel()
 
 	if err := p.stream.Connect(connectCtx); err != nil {
-		return err
+		return fmt.Errorf("connect stream: %w", err)
 	}
 
 	p.startWriter.Do(func() {
@@ -178,7 +190,7 @@ func (p *streamTransport) Send(data []byte) error {
 		p.ackMu.Unlock()
 	}()
 
-	for attempt := 0; attempt < maxSendAttempts; attempt++ {
+	for range maxSendAttempts {
 		for idx, fragment := range fragments {
 			frame := encodeDataFrame(seq, crc, len(data), idx, len(fragments), fragment)
 			if err := p.enqueueFrame(frame, false); err != nil {
@@ -210,7 +222,9 @@ func (p *streamTransport) Close() error {
 		if p.writerUp.Load() {
 			<-p.writerDone
 		}
-		return p.stream.Close()
+		if err := p.stream.Close(); err != nil {
+			return fmt.Errorf("close stream: %w", err)
+		}
 	}
 	return nil
 }
@@ -256,10 +270,7 @@ func (p *streamTransport) writerLoop() {
 	ticker := time.NewTicker(defaultFrameInterval)
 	defer ticker.Stop()
 
-	idle, err := buildVideoAccessUnit(nil)
-	if err != nil {
-		return
-	}
+	idle := buildVideoAccessUnit(nil)
 
 	for {
 		select {
@@ -273,10 +284,7 @@ func (p *streamTransport) writerLoop() {
 
 			sample := idle
 			if payload != nil {
-				sample, err = buildVideoAccessUnit(payload)
-				if err != nil {
-					continue
-				}
+				sample = buildVideoAccessUnit(payload)
 			}
 
 			_ = p.track.WriteSample(media.Sample{
@@ -371,14 +379,7 @@ func (p *streamTransport) handleSample(sample []byte) {
 	}
 }
 
-func (p *streamTransport) handleInboundFrame(frame transportFrame) {
-	p.recvMu.Lock()
-	if crc, ok := p.delivered[frame.seq]; ok && crc == frame.crc {
-		p.recvMu.Unlock()
-		p.sendAck(frame.seq, frame.crc)
-		return
-	}
-
+func (p *streamTransport) upsertInbound(frame transportFrame) (*inboundMessage, bool) {
 	msg, ok := p.inbound[frame.seq]
 	if !ok || msg.crc != frame.crc || msg.totalLen != frame.totalLen || len(msg.frags) != int(frame.fragTotal) {
 		msg = &inboundMessage{
@@ -389,33 +390,45 @@ func (p *streamTransport) handleInboundFrame(frame transportFrame) {
 		}
 		p.inbound[frame.seq] = msg
 	}
-
 	if int(frame.fragIdx) >= len(msg.frags) {
-		p.recvMu.Unlock()
-		return
+		return nil, false
 	}
-
 	if msg.frags[frame.fragIdx] == nil {
 		chunk := make([]byte, len(frame.payload))
 		copy(chunk, frame.payload)
 		msg.frags[frame.fragIdx] = chunk
 		msg.remain--
 	}
+	return msg, msg.remain == 0
+}
 
-	if msg.remain > 0 {
+func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
+	data := make([]byte, 0, msg.totalLen)
+	for _, frag := range msg.frags {
+		data = append(data, frag...)
+	}
+	if uint32(len(data)) > msg.totalLen { //nolint:gosec
+		data = data[:msg.totalLen]
+	}
+	return data
+}
+
+func (p *streamTransport) handleInboundFrame(frame transportFrame) {
+	p.recvMu.Lock()
+	if crc, ok := p.delivered[frame.seq]; ok && crc == frame.crc {
+		p.recvMu.Unlock()
+		p.sendAck(frame.seq, frame.crc)
+		return
+	}
+
+	msg, complete := p.upsertInbound(frame)
+	if msg == nil || !complete {
 		p.recvMu.Unlock()
 		return
 	}
 
 	delete(p.inbound, frame.seq)
-	data := make([]byte, 0, msg.totalLen)
-	for _, frag := range msg.frags {
-		data = append(data, frag...)
-	}
-
-	if uint32(len(data)) > msg.totalLen {
-		data = data[:msg.totalLen]
-	}
+	data := p.assembleMessage(msg)
 
 	if crc32.ChecksumIEEE(data) != msg.crc {
 		p.recvMu.Unlock()
@@ -480,9 +493,9 @@ func encodeDataFrame(seq, crc uint32, totalLen, fragIdx, fragTotal int, payload 
 	out[5] = frameTypeData
 	binary.BigEndian.PutUint32(out[6:10], seq)
 	binary.BigEndian.PutUint32(out[10:14], crc)
-	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))
-	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))
-	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal))
+	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))  //nolint:gosec
+	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))   //nolint:gosec
+	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal)) //nolint:gosec
 	copy(out[22:], payload)
 	return out
 }
@@ -499,27 +512,27 @@ func encodeAckFrame(seq, crc uint32) []byte {
 
 func decodeTransportFrame(data []byte) (transportFrame, error) {
 	if len(data) < 6 {
-		return transportFrame{}, fmt.Errorf("frame too short")
+		return transportFrame{}, ErrFrameTooShort
 	}
 	if binary.BigEndian.Uint32(data[0:4]) != protocolMagic {
-		return transportFrame{}, fmt.Errorf("unexpected frame magic")
+		return transportFrame{}, ErrUnexpectedMagic
 	}
 	if data[4] != protocolVersion {
-		return transportFrame{}, fmt.Errorf("unexpected frame version")
+		return transportFrame{}, ErrUnexpectedVersion
 	}
 
 	frame := transportFrame{typ: data[5]}
 	switch frame.typ {
 	case frameTypeAck:
 		if len(data) < 14 {
-			return transportFrame{}, fmt.Errorf("ack too short")
+			return transportFrame{}, ErrAckTooShort
 		}
 		frame.seq = binary.BigEndian.Uint32(data[6:10])
 		frame.crc = binary.BigEndian.Uint32(data[10:14])
 		return frame, nil
 	case frameTypeData:
 		if len(data) < 22 {
-			return transportFrame{}, fmt.Errorf("data too short")
+			return transportFrame{}, ErrDataTooShort
 		}
 		frame.seq = binary.BigEndian.Uint32(data[6:10])
 		frame.crc = binary.BigEndian.Uint32(data[10:14])
@@ -529,6 +542,6 @@ func decodeTransportFrame(data []byte) (transportFrame, error) {
 		frame.payload = append([]byte(nil), data[22:]...)
 		return frame, nil
 	default:
-		return transportFrame{}, fmt.Errorf("unexpected frame type")
+		return transportFrame{}, ErrUnexpectedFrameType
 	}
 }

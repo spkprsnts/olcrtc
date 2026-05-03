@@ -22,6 +22,8 @@ import (
 )
 
 var (
+	// ErrKeyRequired is returned when no encryption key is provided.
+	ErrKeyRequired = errors.New("key required (use -key <hex>)")
 	// ErrKeySize is returned when the encryption key is not 32 bytes.
 	ErrKeySize = errors.New("key must be 32 bytes")
 	// ErrSocks5AuthFailed is returned when SOCKS5 authentication fails.
@@ -100,17 +102,17 @@ func Run(
 		return err
 	}
 
-	err = s.serve(runCtx)
+	s.serve(runCtx)
 
 	s.shutdown()
 	s.wg.Wait()
 
-	return err
+	return nil
 }
 
 func setupCipher(keyHex string) (*crypto.Cipher, error) {
 	if keyHex == "" {
-		return nil, errors.New("key required (use -key <hex>)")
+		return nil, ErrKeyRequired
 	}
 
 	key, err := hex.DecodeString(keyHex)
@@ -252,10 +254,12 @@ func (s *Server) onData(data []byte) {
 // serve drives the smux Accept loop, spawning a tunnel per inbound stream.
 // The loop tolerates session bounces (reconnects) by waiting until a fresh
 // session is installed instead of terminating the server.
-func (s *Server) serve(ctx context.Context) error {
+func (s *Server) serve(ctx context.Context) {
 	for {
-		if ctx.Err() != nil {
-			return nil
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
 
 		s.sessMu.RLock()
@@ -264,7 +268,7 @@ func (s *Server) serve(ctx context.Context) error {
 		if sess == nil {
 			select {
 			case <-ctx.Done():
-				return nil
+				return
 			case <-time.After(50 * time.Millisecond):
 				continue
 			}
@@ -272,10 +276,10 @@ func (s *Server) serve(ctx context.Context) error {
 
 		stream, err := sess.AcceptStream()
 		if err != nil {
-			// Session is torn down (reconnect or close). If we're shutting
-			// down, exit; otherwise wait for a new session and retry.
-			if ctx.Err() != nil {
-				return nil
+			select {
+			case <-ctx.Done():
+				return
+			default:
 			}
 			logger.Infof("AcceptStream returned %v — waiting for new session", err)
 			time.Sleep(100 * time.Millisecond)
@@ -305,7 +309,7 @@ func (s *Server) shutdown() {
 }
 
 func (s *Server) handleStream(_ context.Context, stream *smux.Stream) {
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Read the connect JSON. The client writes the whole JSON in one
 	// stream.Write so it usually arrives intact; tolerate fragmentation
@@ -356,7 +360,7 @@ func (s *Server) dispatch(stream *smux.Stream, req ConnectRequest) {
 		logger.Infof("sid=%d dial %s failed (%v): %v", stream.ID(), addr, dialElapsed, err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	logger.Infof("sid=%d connected %s in %v", stream.ID(), addr, dialElapsed)
 

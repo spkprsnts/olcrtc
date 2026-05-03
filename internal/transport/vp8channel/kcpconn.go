@@ -6,10 +6,9 @@ import (
 	"time"
 )
 
-// fakeAddr is a placeholder address used by the KCP session. The underlying
-// "packet conn" is a point-to-point pipe over the VP8 carrier and has no real
-// notion of an address, but kcp-go's API requires one.
-var fakeAddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1}
+func fakeUDPAddr() *net.UDPAddr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1}
+}
 
 // kcpConn is a net.PacketConn implementation that bridges kcp-go on top of
 // the vp8channel byte-message carrier.
@@ -62,7 +61,7 @@ func (c *kcpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	if !deadline.IsZero() {
 		d := time.Until(deadline)
 		if d <= 0 {
-			return 0, nil, errTimeout{}
+			return 0, nil, TimeoutError{}
 		}
 		t := time.NewTimer(d)
 		defer t.Stop()
@@ -72,11 +71,11 @@ func (c *kcpConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	select {
 	case msg := <-c.in:
 		n := copy(p, msg)
-		return n, fakeAddr, nil
+		return n, fakeUDPAddr(), nil
 	case <-c.closed:
 		return 0, nil, net.ErrClosed
 	case <-timerC:
-		return 0, nil, errTimeout{}
+		return 0, nil, TimeoutError{}
 	}
 }
 
@@ -92,7 +91,7 @@ func (c *kcpConn) WriteTo(p []byte, _ net.Addr) (int, error) {
 	if !deadline.IsZero() {
 		d := time.Until(deadline)
 		if d <= 0 {
-			return 0, errTimeout{}
+			return 0, TimeoutError{}
 		}
 		t := time.NewTimer(d)
 		defer t.Stop()
@@ -105,7 +104,7 @@ func (c *kcpConn) WriteTo(p []byte, _ net.Addr) (int, error) {
 	case <-c.closed:
 		return 0, net.ErrClosed
 	case <-timerC:
-		return 0, errTimeout{}
+		return 0, TimeoutError{}
 	}
 }
 
@@ -114,7 +113,7 @@ func (c *kcpConn) Close() error {
 	return nil
 }
 
-func (c *kcpConn) LocalAddr() net.Addr { return fakeAddr }
+func (c *kcpConn) LocalAddr() net.Addr { return fakeUDPAddr() }
 
 func (c *kcpConn) SetDeadline(t time.Time) error {
 	_ = c.SetReadDeadline(t)
@@ -136,8 +135,13 @@ func (c *kcpConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-type errTimeout struct{}
+// TimeoutError is a net.Error indicating a deadline exceeded.
+type TimeoutError struct{}
 
-func (errTimeout) Error() string   { return "i/o timeout" }
-func (errTimeout) Timeout() bool   { return true }
-func (errTimeout) Temporary() bool { return true }
+func (TimeoutError) Error() string { return "i/o timeout" }
+
+// Timeout reports that this error is a timeout.
+func (TimeoutError) Timeout() bool { return true }
+
+// Temporary reports that this error is temporary.
+func (TimeoutError) Temporary() bool { return true }

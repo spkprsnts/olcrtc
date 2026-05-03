@@ -26,15 +26,25 @@ var (
 	ErrConnectFailed = errors.New("tunnel connection failed")
 	// ErrProxyAuth is returned when SOCKS proxy authentication fails.
 	ErrProxyAuth = errors.New("SOCKS proxy auth failed")
+	// ErrKeySize is returned when the encryption key is not 32 bytes.
+	ErrKeySize = errors.New("key must be 32 bytes")
+	// ErrInvalidSOCKSVersion is returned when the SOCKS version is not 5.
+	ErrInvalidSOCKSVersion = errors.New("invalid socks version")
+	// ErrUnsupportedSOCKSCommand is returned for unsupported SOCKS commands.
+	ErrUnsupportedSOCKSCommand = errors.New("unsupported socks command")
+	// ErrUnsupportedAddressType is returned for unsupported SOCKS address types.
+	ErrUnsupportedAddressType = errors.New("unsupported address type")
+	// ErrRemoteNotReady is returned when the server-side stream fails to signal readiness.
+	ErrRemoteNotReady = errors.New("remote not ready")
 )
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
 type Client struct {
-	ln       link.Link
-	cipher   *crypto.Cipher
-	conn     *muxconn.Conn
-	session  *smux.Session
-	sessMu   sync.RWMutex
+	ln        link.Link
+	cipher    *crypto.Cipher
+	conn      *muxconn.Conn
+	session   *smux.Session
+	sessMu    sync.RWMutex
 	dnsServer string
 }
 
@@ -63,7 +73,13 @@ func Run(
 	vp8FPS int,
 	vp8BatchSize int,
 ) error {
-	return RunWithReady(ctx, linkName, transportName, carrierName, roomURL, keyHex, localAddr, dnsServer, socksUser, socksPass, nil, videoWidth, videoHeight, videoFPS, videoBitrate, videoHW, videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS, vp8FPS, vp8BatchSize)
+	return RunWithReady(
+		ctx, linkName, transportName, carrierName, roomURL, keyHex, localAddr,
+		dnsServer, socksUser, socksPass, nil,
+		videoWidth, videoHeight, videoFPS, videoBitrate, videoHW,
+		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
+		vp8FPS, vp8BatchSize,
+	)
 }
 
 // RunWithReady is like Run but accepts a callback that is called when the client is ready.
@@ -118,7 +134,7 @@ func RunWithReady(
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", localAddr, err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	logger.Infof("SOCKS5 server listening on %s", localAddr)
 
@@ -126,17 +142,10 @@ func RunWithReady(
 		onReady()
 	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- c.acceptLoop(runCtx, listener)
-	}()
+	go c.acceptLoop(runCtx, listener)
 
-	select {
-	case <-runCtx.Done():
-		return nil
-	case err := <-errCh:
-		return err
-	}
+	<-runCtx.Done()
+	return nil
 }
 
 func (c *Client) bringUpLink(
@@ -227,8 +236,6 @@ func (c *Client) handleReconnect() {
 		c.conn = nil
 	}
 	c.sessMu.Unlock()
-	// New SOCKS5 connections will fail until the link comes back up; the
-	// caller will reissue them. Existing streams die with the smux session.
 	c.conn = muxconn.New(c.ln, c.cipher)
 	sess, err := smux.Client(c.conn, smuxConfig())
 	if err != nil {
@@ -260,7 +267,7 @@ func setupCipher(keyHex string) (*crypto.Cipher, error) {
 		return nil, fmt.Errorf("failed to decode key: %w", err)
 	}
 	if len(key) != 32 {
-		return nil, fmt.Errorf("key must be 32 bytes, got %d", len(key))
+		return nil, fmt.Errorf("%w: got %d", ErrKeySize, len(key))
 	}
 
 	cipher, err := crypto.NewCipher(string(key))
@@ -279,13 +286,13 @@ func (c *Client) onData(data []byte) {
 	}
 }
 
-func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) error {
+func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			select {
 			case <-ctx.Done():
-				return nil
+				return
 			default:
 				logger.Warnf("Accept error: %v", err)
 				continue
@@ -295,8 +302,8 @@ func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) error {
 	}
 }
 
-func (c *Client) handleSocks5(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
+func (c *Client) handleSocks5(_ context.Context, conn net.Conn) {
+	defer func() { _ = conn.Close() }()
 
 	if err := c.socks5Handshake(conn); err != nil {
 		return
@@ -315,38 +322,25 @@ func (c *Client) handleSocks5(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	c.tunnel(conn, sess, targetAddr, targetPort)
+}
+
+func (c *Client) tunnel(conn net.Conn, sess *smux.Session, targetAddr string, targetPort int) {
 	stream, err := sess.OpenStream()
 	if err != nil {
 		logger.Warnf("OpenStream failed: %v", err)
 		_, _ = conn.Write(replyHostUnreachable())
 		return
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	logger.Infof("sid=%d tunnel to %s:%d", stream.ID(), targetAddr, targetPort)
 
-	connectReq, _ := json.Marshal(map[string]any{
-		"cmd":  "connect",
-		"addr": targetAddr,
-		"port": targetPort,
-	})
-
-	_ = stream.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	if _, err := stream.Write(connectReq); err != nil {
-		logger.Warnf("sid=%d connect req failed: %v", stream.ID(), err)
+	if err := c.sendConnectRequest(stream, targetAddr, targetPort); err != nil {
+		logger.Warnf("sid=%d connect failed: %v", stream.ID(), err)
 		_, _ = conn.Write(replyHostUnreachable())
 		return
 	}
-	_ = stream.SetWriteDeadline(time.Time{})
-
-	ack := make([]byte, 1)
-	_ = stream.SetReadDeadline(time.Now().Add(15 * time.Second))
-	if _, err := io.ReadFull(stream, ack); err != nil || ack[0] != 0x00 {
-		logger.Warnf("sid=%d remote ready failed: err=%v ack=%v", stream.ID(), err, ack)
-		_, _ = conn.Write(replyHostUnreachable())
-		return
-	}
-	_ = stream.SetReadDeadline(time.Time{})
 
 	if _, err := conn.Write(replySuccess()); err != nil {
 		return
@@ -357,24 +351,47 @@ func (c *Client) handleSocks5(ctx context.Context, conn net.Conn) {
 		_ = stream.Close()
 	}()
 	_, _ = io.Copy(conn, stream)
+}
 
-	_ = ctx // keep signature
+func (c *Client) sendConnectRequest(stream *smux.Stream, targetAddr string, targetPort int) error {
+	connectReq, err := json.Marshal(map[string]any{
+		"cmd":  "connect",
+		"addr": targetAddr,
+		"port": targetPort,
+	})
+	if err != nil {
+		return fmt.Errorf("sid=%d marshal connect req: %w", stream.ID(), err)
+	}
+
+	_ = stream.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if _, err := stream.Write(connectReq); err != nil {
+		return fmt.Errorf("sid=%d write connect req: %w", stream.ID(), err)
+	}
+	_ = stream.SetWriteDeadline(time.Time{})
+
+	ack := make([]byte, 1)
+	_ = stream.SetReadDeadline(time.Now().Add(15 * time.Second))
+	if _, err := io.ReadFull(stream, ack); err != nil || ack[0] != 0x00 {
+		return fmt.Errorf("sid=%d: %w (read_err=%w ack=%v)", stream.ID(), ErrRemoteNotReady, err, ack)
+	}
+	_ = stream.SetReadDeadline(time.Time{})
+	return nil
 }
 
 func (c *Client) socks5Handshake(conn net.Conn) error {
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return err
+		return fmt.Errorf("read socks5 header: %w", err)
 	}
 	if buf[0] != 5 {
-		return fmt.Errorf("invalid socks version: %d", buf[0])
+		return fmt.Errorf("%w: %d", ErrInvalidSOCKSVersion, buf[0])
 	}
 	methods := make([]byte, buf[1])
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		return err
+		return fmt.Errorf("read socks5 methods: %w", err)
 	}
 	if _, err := conn.Write([]byte{5, 0}); err != nil {
-		return err
+		return fmt.Errorf("write socks5 auth: %w", err)
 	}
 	return nil
 }
@@ -382,41 +399,47 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 func (c *Client) socks5Request(conn net.Conn) (string, int, error) {
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(conn, header); err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("read socks5 request: %w", err)
 	}
 	if header[1] != 1 {
-		return "", 0, fmt.Errorf("unsupported socks command: %d", header[1])
+		return "", 0, fmt.Errorf("%w: %d", ErrUnsupportedSOCKSCommand, header[1])
 	}
 
-	var addr string
-	switch header[3] {
-	case 1: // IPv4
-		buf := make([]byte, 4)
-		if _, err := io.ReadFull(conn, buf); err != nil {
-			return "", 0, err
-		}
-		addr = net.IP(buf).String()
-	case 3: // Domain
-		lenBuf := make([]byte, 1)
-		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", 0, err
-		}
-		buf := make([]byte, lenBuf[0])
-		if _, err := io.ReadFull(conn, buf); err != nil {
-			return "", 0, err
-		}
-		addr = string(buf)
-	default:
-		return "", 0, fmt.Errorf("unsupported address type: %d", header[3])
+	addr, err := c.readSocks5Addr(conn, header[3])
+	if err != nil {
+		return "", 0, err
 	}
 
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("read socks5 port: %w", err)
 	}
 	port := int(binary.BigEndian.Uint16(portBuf))
 
 	return addr, port, nil
+}
+
+func (c *Client) readSocks5Addr(conn net.Conn, addrType byte) (string, error) {
+	switch addrType {
+	case 1: // IPv4
+		buf := make([]byte, 4)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return "", fmt.Errorf("read socks5 ipv4: %w", err)
+		}
+		return net.IP(buf).String(), nil
+	case 3: // Domain
+		lenBuf := make([]byte, 1)
+		if _, err := io.ReadFull(conn, lenBuf); err != nil {
+			return "", fmt.Errorf("read socks5 domain len: %w", err)
+		}
+		buf := make([]byte, lenBuf[0])
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return "", fmt.Errorf("read socks5 domain: %w", err)
+		}
+		return string(buf), nil
+	default:
+		return "", fmt.Errorf("%w: %d", ErrUnsupportedAddressType, addrType)
+	}
 }
 
 func replySuccess() []byte {

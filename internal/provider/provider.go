@@ -22,8 +22,6 @@ var (
 )
 
 // Provider defines the standard interface for WebRTC connection handlers.
-//
-//nolint:interfacebloat // All methods are necessary for provider abstraction.
 type Provider interface {
 	Connect(ctx context.Context) error
 	Send(data []byte) error

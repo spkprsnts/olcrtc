@@ -42,6 +42,8 @@ var (
 	ErrSessionClosed = errors.New("session closed")
 	// ErrPeerClosed is returned when the peer is closed.
 	ErrPeerClosed = errors.New("peer closed")
+	// ErrSubscriberMediaTimeout is returned when subscriber media is not ready within the timeout period.
+	ErrSubscriberMediaTimeout = errors.New("subscriber media timeout")
 )
 
 // TrafficShape defines the parameters for outgoing traffic control.
@@ -288,7 +290,7 @@ func (p *Peer) waitForMediaReady(ctx context.Context, timeout time.Duration) err
 	select {
 	case <-p.subscriberConn:
 	case <-timer.C:
-		return fmt.Errorf("subscriber media timeout")
+		return ErrSubscriberMediaTimeout
 	case <-ctx.Done():
 		return fmt.Errorf("connect context cancelled: %w", ctx.Err())
 	}
@@ -314,7 +316,8 @@ func (p *Peer) setupPeerConnections(config webrtc.Configuration) error {
 			return
 		}
 
-		logger.Infof("telemost remote video track: codec=%s stream=%s track=%s", track.Codec().MimeType, track.StreamID(), track.ID())
+		logger.Infof("telemost remote video track: codec=%s stream=%s track=%s",
+				track.Codec().MimeType, track.StreamID(), track.ID())
 
 		if cb := p.videoTrackHandler(); cb != nil {
 			cb(track, receiver)
@@ -342,29 +345,35 @@ func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
 
 func (p *Peer) onSubscriberConnectionStateChange(state webrtc.PeerConnectionState) {
 	logger.Debugf("telemost subscriber state: %s", state.String())
-	if state == webrtc.PeerConnectionStateConnected {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
 		p.subscriberReady.Store(true)
 		closeSignal(p.subscriberConn)
-	} else if state == webrtc.PeerConnectionStateDisconnected ||
-		state == webrtc.PeerConnectionStateFailed ||
-		state == webrtc.PeerConnectionStateClosed {
+	case webrtc.PeerConnectionStateDisconnected,
+		webrtc.PeerConnectionStateFailed,
+		webrtc.PeerConnectionStateClosed:
 		p.subscriberReady.Store(false)
+	case webrtc.PeerConnectionStateUnknown,
+		webrtc.PeerConnectionStateNew,
+		webrtc.PeerConnectionStateConnecting:
 	}
-
 	p.onConnectionStateChange(state)
 }
 
 func (p *Peer) onPublisherConnectionStateChange(state webrtc.PeerConnectionState) {
 	logger.Debugf("telemost publisher state: %s", state.String())
-	if state == webrtc.PeerConnectionStateConnected {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
 		p.publisherReady.Store(true)
 		closeSignal(p.publisherConn)
-	} else if state == webrtc.PeerConnectionStateDisconnected ||
-		state == webrtc.PeerConnectionStateFailed ||
-		state == webrtc.PeerConnectionStateClosed {
+	case webrtc.PeerConnectionStateDisconnected,
+		webrtc.PeerConnectionStateFailed,
+		webrtc.PeerConnectionStateClosed:
 		p.publisherReady.Store(false)
+	case webrtc.PeerConnectionStateUnknown,
+		webrtc.PeerConnectionStateNew,
+		webrtc.PeerConnectionStateConnecting:
 	}
-
 	p.onConnectionStateChange(state)
 }
 
@@ -656,7 +665,7 @@ func (p *Peer) sendSetSlots() error {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
 
-	return p.ws.WriteJSON(map[string]interface{}{
+	if err := p.ws.WriteJSON(map[string]interface{}{
 		"uid": uuid.New().String(),
 		"setSlots": map[string]interface{}{
 			"slots": []map[string]int{
@@ -670,7 +679,52 @@ func (p *Peer) sendSetSlots() error {
 			"selfViewVisibility": "ON_LOADING_THEN_SHOW",
 			"gridConfig":         map[string]interface{}{},
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("write set slots: %w", err)
+	}
+	return nil
+}
+
+func isNonTURNURL(url string) bool {
+	return url != "" && !strings.HasPrefix(url, "turn:") && !strings.HasPrefix(url, "turns:")
+}
+
+func parseICEURLs(server map[string]interface{}) []string {
+	var urls []string
+	switch rawURLs := server["urls"].(type) {
+	case []interface{}:
+		for _, rawURL := range rawURLs {
+			if url, ok := rawURL.(string); ok && isNonTURNURL(url) {
+				urls = append(urls, url)
+			}
+		}
+	case []string:
+		for _, url := range rawURLs {
+			if isNonTURNURL(url) {
+				urls = append(urls, url)
+			}
+		}
+	}
+	return urls
+}
+
+func parseICEServer(rawServer interface{}) (webrtc.ICEServer, bool) {
+	server, ok := rawServer.(map[string]interface{})
+	if !ok {
+		return webrtc.ICEServer{}, false
+	}
+	urls := parseICEURLs(server)
+	if len(urls) == 0 {
+		return webrtc.ICEServer{}, false
+	}
+	ice := webrtc.ICEServer{URLs: urls}
+	if username, ok := server["username"].(string); ok {
+		ice.Username = username
+	}
+	if credential, ok := server["credential"].(string); ok {
+		ice.Credential = credential
+	}
+	return ice, true
 }
 
 func (p *Peer) applyServerHelloConfig(serverHello map[string]interface{}) {
@@ -686,39 +740,9 @@ func (p *Peer) applyServerHelloConfig(serverHello map[string]interface{}) {
 
 	iceServers := make([]webrtc.ICEServer, 0, len(rawServers))
 	for _, rawServer := range rawServers {
-		server, ok := rawServer.(map[string]interface{})
-		if !ok {
-			continue
+		if ice, ok := parseICEServer(rawServer); ok {
+			iceServers = append(iceServers, ice)
 		}
-
-		var urls []string
-		switch rawURLs := server["urls"].(type) {
-		case []interface{}:
-			for _, rawURL := range rawURLs {
-				if url, ok := rawURL.(string); ok && url != "" && !strings.HasPrefix(url, "turn:") && !strings.HasPrefix(url, "turns:") {
-					urls = append(urls, url)
-				}
-			}
-		case []string:
-			for _, url := range rawURLs {
-				if !strings.HasPrefix(url, "turn:") && !strings.HasPrefix(url, "turns:") {
-					urls = append(urls, url)
-				}
-			}
-		}
-
-		if len(urls) == 0 {
-			continue
-		}
-
-		ice := webrtc.ICEServer{URLs: urls}
-		if username, ok := server["username"].(string); ok {
-			ice.Username = username
-		}
-		if credential, ok := server["credential"].(string); ok {
-			ice.Credential = credential
-		}
-		iceServers = append(iceServers, ice)
 	}
 
 	if len(iceServers) == 0 {

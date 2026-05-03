@@ -44,17 +44,26 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 
 // Connect starts the transport connection.
 func (p *streamTransport) Connect(ctx context.Context) error {
-	return p.stream.Connect(ctx)
+	if err := p.stream.Connect(ctx); err != nil {
+		return fmt.Errorf("stream connect: %w", err)
+	}
+	return nil
 }
 
 // Send transmits data through the transport.
 func (p *streamTransport) Send(data []byte) error {
-	return p.stream.Send(data)
+	if err := p.stream.Send(data); err != nil {
+		return fmt.Errorf("stream send: %w", err)
+	}
+	return nil
 }
 
 // Close terminates the transport.
 func (p *streamTransport) Close() error {
-	return p.stream.Close()
+	if err := p.stream.Close(); err != nil {
+		return fmt.Errorf("stream close: %w", err)
+	}
+	return nil
 }
 
 // SetReconnectCallback registers reconnect handling.

@@ -2,7 +2,7 @@ package videochannel
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 )
 
 const (
@@ -10,6 +10,21 @@ const (
 	protocolVersion byte   = 1
 	frameTypeData   byte   = 1
 	frameTypeAck    byte   = 2
+)
+
+var (
+	// ErrFrameTooShort is returned when the received frame is too short to decode.
+	ErrFrameTooShort = errors.New("frame too short")
+	// ErrUnexpectedMagic is returned when the frame magic bytes do not match.
+	ErrUnexpectedMagic = errors.New("unexpected frame magic")
+	// ErrUnexpectedVersion is returned when the frame protocol version does not match.
+	ErrUnexpectedVersion = errors.New("unexpected frame version")
+	// ErrAckTooShort is returned when the ack frame is shorter than expected.
+	ErrAckTooShort = errors.New("ack frame too short")
+	// ErrDataTooShort is returned when the data frame is shorter than expected.
+	ErrDataTooShort = errors.New("data frame too short")
+	// ErrUnexpectedFrameType is returned for unknown frame type bytes.
+	ErrUnexpectedFrameType = errors.New("unexpected frame type")
 )
 
 type transportFrame struct {
@@ -56,9 +71,9 @@ func encodeDataFrame(seq, crc uint32, totalLen, fragIdx, fragTotal int, payload 
 	out[5] = frameTypeData
 	binary.BigEndian.PutUint32(out[6:10], seq)
 	binary.BigEndian.PutUint32(out[10:14], crc)
-	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))
-	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))
-	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal))
+	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))  //nolint:gosec
+	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))   //nolint:gosec
+	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal)) //nolint:gosec
 	copy(out[22:], payload)
 	return out
 }
@@ -75,27 +90,27 @@ func encodeAckFrame(seq, crc uint32) []byte {
 
 func decodeTransportFrame(data []byte) (transportFrame, error) {
 	if len(data) < 6 {
-		return transportFrame{}, fmt.Errorf("frame too short")
+		return transportFrame{}, ErrFrameTooShort
 	}
 	if binary.BigEndian.Uint32(data[0:4]) != protocolMagic {
-		return transportFrame{}, fmt.Errorf("unexpected frame magic")
+		return transportFrame{}, ErrUnexpectedMagic
 	}
 	if data[4] != protocolVersion {
-		return transportFrame{}, fmt.Errorf("unexpected frame version")
+		return transportFrame{}, ErrUnexpectedVersion
 	}
 
 	frame := transportFrame{typ: data[5]}
 	switch frame.typ {
 	case frameTypeAck:
 		if len(data) < 14 {
-			return transportFrame{}, fmt.Errorf("ack too short")
+			return transportFrame{}, ErrAckTooShort
 		}
 		frame.seq = binary.BigEndian.Uint32(data[6:10])
 		frame.crc = binary.BigEndian.Uint32(data[10:14])
 		return frame, nil
 	case frameTypeData:
 		if len(data) < 22 {
-			return transportFrame{}, fmt.Errorf("data too short")
+			return transportFrame{}, ErrDataTooShort
 		}
 		frame.seq = binary.BigEndian.Uint32(data[6:10])
 		frame.crc = binary.BigEndian.Uint32(data[10:14])
@@ -105,6 +120,6 @@ func decodeTransportFrame(data []byte) (transportFrame, error) {
 		frame.payload = append([]byte(nil), data[22:]...)
 		return frame, nil
 	default:
-		return transportFrame{}, fmt.Errorf("unexpected frame type")
+		return transportFrame{}, ErrUnexpectedFrameType
 	}
 }

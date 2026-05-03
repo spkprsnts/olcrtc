@@ -17,6 +17,7 @@ package muxconn
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -92,10 +93,10 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 	enc, err := c.cipher.Encrypt(p)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("encrypt: %w", err)
 	}
 	if err := c.ln.Send(enc); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("send: %w", err)
 	}
 	return len(p), nil
 }

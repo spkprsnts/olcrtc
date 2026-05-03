@@ -2,11 +2,13 @@ package videochannel
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +29,12 @@ var (
 	ErrFFmpegUnavailable = errors.New("ffmpeg is required for videochannel")
 	// ErrUnsupportedVideoCodec is returned when videochannel cannot decode the negotiated codec.
 	ErrUnsupportedVideoCodec = errors.New("unsupported video codec")
+	// ErrEncoderTimeout is returned when the encoder does not produce a frame within the deadline.
+	ErrEncoderTimeout = errors.New("encoder timeout")
+	// ErrPopFrameTimeout is returned when no decoded frame is available within the deadline.
+	ErrPopFrameTimeout = errors.New("pop frame timeout")
+	// ErrUnexpectedFrameSize is returned when the raw frame size does not match expectations.
+	ErrUnexpectedFrameSize = errors.New("unexpected encoder frame size")
 )
 
 type codecSpec struct {
@@ -38,8 +46,7 @@ type codecSpec struct {
 	encodeArgs   []string
 }
 
-func codecSpecForCarrier(carrier string) codecSpec {
-	// Natural default for most WebRTC providers
+func codecSpecForCarrier(_ string) codecSpec {
 	return vp8CodecSpec()
 }
 
@@ -120,6 +127,49 @@ func vp8CodecSpec() codecSpec {
 	}
 }
 
+func resolveEncoderCodec(spec codecSpec, hw string) string {
+	if hw != "nvenc" {
+		return spec.encoder
+	}
+	switch spec.mimeType {
+	case webrtc.MimeTypeH264:
+		return "h264_nvenc"
+	case webrtc.MimeTypeVP8:
+		return "vp8_nvenc"
+	case webrtc.MimeTypeVP9:
+		return "vp9_nvenc"
+	case webrtc.MimeTypeAV1:
+		return "av1_nvenc"
+	default:
+		return spec.encoder
+	}
+}
+
+func buildEncoderArgs(spec codecSpec, vcodec string, width, height, fps int, bitrate string) []string {
+	args := []string{
+		"-loglevel", "error", "-threads", "1",
+		"-f", "rawvideo",
+		"-pix_fmt", "gray",
+		"-video_size", strconv.Itoa(width) + "x" + strconv.Itoa(height),
+		"-framerate", strconv.Itoa(fps),
+		"-i", "pipe:0",
+		"-an",
+	}
+
+	if strings.HasSuffix(vcodec, "_nvenc") {
+		args = append(args, "-c:v", vcodec, "-preset", "p1", "-tune", "ull", "-rc", "vbr")
+	} else {
+		args = append(args, spec.encodeArgs...)
+	}
+
+	args = append(args, "-g", "1", "-pix_fmt", "yuv420p", "-b:v", bitrate)
+
+	if spec.mimeType == webrtc.MimeTypeH264 {
+		return append(args, "-f", "h264", "pipe:1")
+	}
+	return append(args, "-f", "ivf", "pipe:1")
+}
+
 type ffmpegEncoder struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
@@ -134,62 +184,20 @@ type ffmpegEncoder struct {
 	err       error
 }
 
-func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string) (*ffmpegEncoder, error) {
+func newFFmpegEncoder(
+	ctx context.Context,
+	spec codecSpec,
+	width, height, fps int,
+	bitrate, hw string,
+) (*ffmpegEncoder, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
 
-	args := []string{"-loglevel", "error", "-threads", "1"}
+	vcodec := resolveEncoderCodec(spec, hw)
+	args := buildEncoderArgs(spec, vcodec, width, height, fps, bitrate)
 
-	// Determine encoder binary based on HW flag
-	vcodec := spec.encoder
-	if hw == "nvenc" {
-		switch spec.mimeType {
-		case webrtc.MimeTypeH264:
-			vcodec = "h264_nvenc"
-		case webrtc.MimeTypeVP8:
-			vcodec = "vp8_nvenc"
-		case webrtc.MimeTypeVP9:
-			vcodec = "vp9_nvenc"
-		case webrtc.MimeTypeAV1:
-			vcodec = "av1_nvenc"
-		}
-	}
-
-	inputPixFmt := "gray"
-	frameSize := width * height
-
-	args = append(args,
-		"-f", "rawvideo",
-		"-pix_fmt", inputPixFmt,
-		"-video_size", fmt.Sprintf("%dx%d", width, height),
-		"-framerate", fmt.Sprintf("%d", fps),
-		"-i", "pipe:0",
-		"-an",
-	)
-
-	// Apply hardware specific flags if using NVENC
-	if strings.HasSuffix(vcodec, "_nvenc") {
-		args = append(args,
-			"-c:v", vcodec,
-			"-preset", "p1",
-			"-tune", "ull",
-			"-rc", "vbr",
-		)
-	} else {
-		// Use software encoder args from spec
-		args = append(args, spec.encodeArgs...)
-	}
-
-	args = append(args, "-g", "1", "-pix_fmt", "yuv420p", "-b:v", bitrate)
-
-	if spec.mimeType == webrtc.MimeTypeH264 {
-		args = append(args, "-f", "h264", "pipe:1")
-	} else {
-		args = append(args, "-f", "ivf", "pipe:1")
-	}
-
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("encoder stdin: %w", err)
@@ -212,7 +220,7 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string
 		frames:    make(chan []byte, 8),
 		width:     width,
 		height:    height,
-		frameSize: frameSize,
+		frameSize: width * height,
 	}
 
 	if spec.mimeType == webrtc.MimeTypeH264 {
@@ -225,7 +233,7 @@ func newFFmpegEncoder(spec codecSpec, width, height, fps int, bitrate, hw string
 
 func (e *ffmpegEncoder) EncodeFrame(frame []byte) ([]byte, error) {
 	if len(frame) != e.frameSize {
-		return nil, fmt.Errorf("unexpected encoder frame size: %d (expected %d)", len(frame), e.frameSize)
+		return nil, fmt.Errorf("%w: got %d expected %d", ErrUnexpectedFrameSize, len(frame), e.frameSize)
 	}
 	if err := e.processErr(); err != nil {
 		return nil, err
@@ -244,7 +252,7 @@ func (e *ffmpegEncoder) EncodeFrame(frame []byte) ([]byte, error) {
 		if err := e.processErr(); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("encoder timeout")
+		return nil, ErrEncoderTimeout
 	}
 }
 
@@ -327,6 +335,43 @@ func (e *ffmpegEncoder) processErr() error {
 	return nil
 }
 
+func resolveDecoderName(spec codecSpec, hw string) string {
+	if hw != "nvenc" {
+		return strings.ToLower(strings.TrimPrefix(spec.mimeType, "video/"))
+	}
+	switch spec.mimeType {
+	case webrtc.MimeTypeH264:
+		return "h264_cuvid"
+	case webrtc.MimeTypeVP8:
+		return "vp8_cuvid"
+	case webrtc.MimeTypeVP9:
+		return "vp9_cuvid"
+	default:
+		return strings.ToLower(strings.TrimPrefix(spec.mimeType, "video/"))
+	}
+}
+
+func buildDecoderArgs(spec codecSpec, decoderName string, width, height int, outputPixFmt string) []string {
+	args := []string{"-loglevel", "error", "-threads", "1"}
+	if spec.mimeType == webrtc.MimeTypeH264 {
+		args = append(args, "-f", "h264")
+	} else {
+		args = append(args, "-f", "ivf")
+	}
+
+	vfFilter := fmt.Sprintf("scale=%d:%d:flags=neighbor,format=%s", width, height, outputPixFmt)
+	return append(args,
+		"-flags", "low_delay",
+		"-vcodec", decoderName,
+		"-i", "pipe:0",
+		"-an",
+		"-vf", vfFilter,
+		"-pix_fmt", outputPixFmt,
+		"-f", "rawvideo",
+		"pipe:1",
+	)
+}
+
 type ffmpegDecoder struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
@@ -341,46 +386,20 @@ type ffmpegDecoder struct {
 	err       error
 }
 
-func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw string) (*ffmpegDecoder, error) {
+func newFFmpegDecoder(
+	ctx context.Context,
+	spec codecSpec,
+	width, height, fps int,
+	hw string,
+) (*ffmpegDecoder, error) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return nil, ErrFFmpegUnavailable
 	}
 
-	decoderName := strings.ToLower(strings.TrimPrefix(spec.mimeType, "video/"))
-	if hw == "nvenc" {
-		switch spec.mimeType {
-		case webrtc.MimeTypeH264:
-			decoderName = "h264_cuvid"
-		case webrtc.MimeTypeVP8:
-			decoderName = "vp8_cuvid"
-		case webrtc.MimeTypeVP9:
-			decoderName = "vp9_cuvid"
-		}
-	}
+	decoderName := resolveDecoderName(spec, hw)
+	args := buildDecoderArgs(spec, decoderName, width, height, "gray")
 
-	outputPixFmt := "gray"
-	frameSize := width * height
-
-	args := []string{"-loglevel", "error", "-threads", "1"}
-	if spec.mimeType == webrtc.MimeTypeH264 {
-		args = append(args, "-f", "h264")
-	} else {
-		args = append(args, "-f", "ivf")
-	}
-
-	vfFilter := fmt.Sprintf("scale=%d:%d:flags=neighbor,format=%s", width, height, outputPixFmt)
-	args = append(args,
-		"-flags", "low_delay",
-		"-vcodec", decoderName,
-		"-i", "pipe:0",
-		"-an",
-		"-vf", vfFilter,
-		"-pix_fmt", outputPixFmt,
-		"-f", "rawvideo",
-		"pipe:1",
-	)
-
-	cmd := exec.Command("ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("decoder stdin: %w", err)
@@ -402,7 +421,7 @@ func newFFmpegDecoder(spec codecSpec, width, height, fps int, hw string) (*ffmpe
 		stderr:    stderr,
 		frames:    make(chan []byte, 32),
 		mimeType:  spec.mimeType,
-		frameSize: frameSize,
+		frameSize: width * height,
 	}
 
 	if spec.mimeType != webrtc.MimeTypeH264 {
@@ -441,7 +460,7 @@ func (d *ffmpegDecoder) PopFrame() ([]byte, error) {
 		}
 		return frame, nil
 	case <-time.After(10 * time.Second):
-		return nil, fmt.Errorf("pop frame timeout")
+		return nil, ErrPopFrameTimeout
 	}
 }
 
@@ -515,9 +534,9 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 	binary.LittleEndian.PutUint16(header[4:6], 0)
 	binary.LittleEndian.PutUint16(header[6:8], 32)
 	copy(header[8:12], []byte(fourCC))
-	binary.LittleEndian.PutUint16(header[12:14], uint16(width))
-	binary.LittleEndian.PutUint16(header[14:16], uint16(height))
-	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate))
+	binary.LittleEndian.PutUint16(header[12:14], uint16(width))    //nolint:gosec
+	binary.LittleEndian.PutUint16(header[14:16], uint16(height))   //nolint:gosec
+	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate)) //nolint:gosec
 	binary.LittleEndian.PutUint32(header[20:24], 1)
 	binary.LittleEndian.PutUint32(header[24:28], 0)
 	binary.LittleEndian.PutUint32(header[28:32], 0)
@@ -526,7 +545,7 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 
 func writeIVFFrame(w io.Writer, pts uint64, frame []byte) error {
 	header := make([]byte, 12)
-	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame)))
+	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame))) //nolint:gosec
 	binary.LittleEndian.PutUint64(header[4:12], pts)
 	if err := writeAll(w, header); err != nil {
 		return err
@@ -538,9 +557,10 @@ func writeAll(w io.Writer, data []byte) error {
 	for len(data) > 0 {
 		n, err := w.Write(data)
 		if err != nil {
-			return err
+			return fmt.Errorf("write: %w", err)
 		}
 		data = data[n:]
 	}
 	return nil
 }
+

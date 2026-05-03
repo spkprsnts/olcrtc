@@ -27,14 +27,13 @@ const (
 )
 
 var (
+	// ErrVideoTrackUnsupported is returned when a carrier cannot expose video tracks.
 	ErrVideoTrackUnsupported = errors.New("carrier does not support video tracks")
-	ErrTransportClosed       = errors.New("vp8channel transport closed")
+	// ErrTransportClosed is returned when operations are attempted on a closed transport.
+	ErrTransportClosed = errors.New("vp8channel transport closed")
 )
 
-// vp8Keepalive is a minimal VP8 keyframe used as idle filler so that the SFU
-// keeps the track flowing when KCP has nothing to send. It is never delivered
-// to KCP because KCP packets always start with the convid (0xC0FFEE01 LE)
-// and would never collide with this keyframe payload.
+//nolint:gochecknoglobals
 var vp8Keepalive = []byte{
 	0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
 	0x10, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88,
@@ -64,6 +63,7 @@ type streamTransport struct {
 	kcpMu sync.RWMutex
 }
 
+// New creates a vp8channel transport backed by a carrier-specific provider.
 func New(ctx context.Context, cfg transport.Config) (transport.Transport, error) {
 	session, err := carrier.New(ctx, cfg.Carrier, carrier.Config{
 		RoomURL:   cfg.RoomURL,
@@ -126,7 +126,7 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 	defer cancel()
 
 	if err := p.stream.Connect(connectCtx); err != nil {
-		return err
+		return fmt.Errorf("connect stream: %w", err)
 	}
 
 	var startErr error
@@ -179,7 +179,9 @@ func (p *streamTransport) Close() error {
 		if p.writerUp.Load() {
 			<-p.writerDone
 		}
-		return p.stream.Close()
+		if err := p.stream.Close(); err != nil {
+			return fmt.Errorf("close stream: %w", err)
+		}
 	}
 	return nil
 }
@@ -302,14 +304,62 @@ func (p *streamTransport) drainTrack(track *webrtc.TrackRemote) {
 	}
 }
 
-func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
-	var vp8Pkt codecs.VP8Packet
-	var frameBuf []byte
-	buf := make([]byte, rtpBufSize)
+type vp8FrameState struct {
+	vp8Pkt      codecs.VP8Packet
+	frameBuf    []byte
+	lastSeq     uint16
+	haveLastSeq bool
+	frameValid  bool
+}
 
-	var lastSeq uint16
-	var haveLastSeq bool
-	frameValid := false
+// processRTPPacket returns a complete KCP frame when the VP8 frame is fully assembled, nil otherwise.
+// Detects packet loss/reordering to avoid silently corrupting fragmented VP8 frames.
+func (s *vp8FrameState) processRTPPacket(pkt *rtp.Packet) []byte {
+	if s.haveLastSeq && pkt.SequenceNumber != s.lastSeq+1 {
+		s.frameValid = false
+		s.frameBuf = s.frameBuf[:0]
+	}
+	s.lastSeq = pkt.SequenceNumber
+	s.haveLastSeq = true
+
+	vp8Payload, err := s.vp8Pkt.Unmarshal(pkt.Payload)
+	if err != nil {
+		s.frameValid = false
+		s.frameBuf = s.frameBuf[:0]
+		return nil
+	}
+
+	if s.vp8Pkt.S == 1 {
+		s.frameBuf = s.frameBuf[:0]
+		s.frameValid = true
+	}
+
+	if !s.frameValid {
+		return nil
+	}
+
+	s.frameBuf = append(s.frameBuf, vp8Payload...)
+
+	if !pkt.Marker {
+		return nil
+	}
+
+	defer func() {
+		s.frameBuf = s.frameBuf[:0]
+		s.frameValid = false
+	}()
+
+	if len(s.frameBuf) >= 4 && s.frameBuf[0] == kcpMagic {
+		frame := make([]byte, len(s.frameBuf))
+		copy(frame, s.frameBuf)
+		return frame
+	}
+	return nil
+}
+
+func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
+	var state vp8FrameState
+	buf := make([]byte, rtpBufSize)
 
 	for {
 		n, _, err := track.Read(buf)
@@ -322,54 +372,16 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 			continue
 		}
 
-		// Detect packet loss / reordering. A single missing RTP packet
-		// inside a fragmented VP8 frame would otherwise silently corrupt
-		// the assembled payload (and bleed into the next frame). KCP can
-		// recover from full-frame drops, but only if the frames it does
-		// receive are byte-perfect.
-		if haveLastSeq {
-			expected := lastSeq + 1
-			if pkt.SequenceNumber != expected {
-				frameValid = false
-				frameBuf = frameBuf[:0]
-			}
-		}
-		lastSeq = pkt.SequenceNumber
-		haveLastSeq = true
-
-		vp8Payload, err := vp8Pkt.Unmarshal(pkt.Payload)
-		if err != nil {
-			frameValid = false
-			frameBuf = frameBuf[:0]
+		frame := state.processRTPPacket(pkt)
+		if frame == nil {
 			continue
 		}
 
-		if vp8Pkt.S == 1 {
-			frameBuf = frameBuf[:0]
-			frameValid = true
-		}
-
-		if !frameValid {
-			continue
-		}
-
-		frameBuf = append(frameBuf, vp8Payload...)
-
-		if pkt.Marker {
-			if len(frameBuf) >= 4 && frameBuf[0] == kcpMagic {
-				p.kcpMu.RLock()
-				rt := p.kcp
-				p.kcpMu.RUnlock()
-				if rt != nil {
-					// Copy out of the shared frame buffer before handing
-					// the payload off — KCP's deliver path is async.
-					payload := make([]byte, len(frameBuf))
-					copy(payload, frameBuf)
-					rt.deliver(payload)
-				}
-			}
-			frameBuf = frameBuf[:0]
-			frameValid = false
+		p.kcpMu.RLock()
+		rt := p.kcp
+		p.kcpMu.RUnlock()
+		if rt != nil {
+			rt.deliver(frame)
 		}
 	}
 }

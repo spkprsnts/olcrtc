@@ -70,9 +70,8 @@ type streamTransport struct {
 	videoCodec      string
 	videoTileModule int
 	videoTileRS     int
+	runCtx          context.Context //nolint:containedctx
 
-	// cached encoded idle frame — rendered and encoded once, reused on every tick
-	// where the outbound queue is empty to avoid re-encoding an identical blank frame.
 	idleFrame   []byte
 	idleFrameMu sync.Mutex
 }
@@ -144,6 +143,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		videoCodec:      cfg.VideoCodec,
 		videoTileModule: tileModule,
 		videoTileRS:     tileRS,
+		runCtx:          ctx,
 	}
 
 	if err := stream.AddTrack(track); err != nil {
@@ -159,14 +159,14 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 	connectCtx, cancel := context.WithTimeout(ctx, defaultConnectTimeout)
 	defer cancel()
 
-	encoder, err := newFFmpegEncoder(p.codec, p.videoW, p.videoH, p.videoFPS, p.videoBitrate, p.videoHW)
+	encoder, err := newFFmpegEncoder(ctx, p.codec, p.videoW, p.videoH, p.videoFPS, p.videoBitrate, p.videoHW)
 	if err != nil {
-		return err
+		return fmt.Errorf("new encoder: %w", err)
 	}
 
 	if err := p.stream.Connect(connectCtx); err != nil {
 		_ = encoder.Close()
-		return err
+		return fmt.Errorf("connect stream: %w", err)
 	}
 
 	p.encoderMu.Lock()
@@ -212,7 +212,7 @@ func (p *streamTransport) Send(data []byte) error {
 		p.ackMu.Unlock()
 	}()
 
-	for attempt := 0; attempt < maxSendAttempts; attempt++ {
+	for range maxSendAttempts {
 		for idx, fragment := range fragments {
 			frame := encodeDataFrame(seq, crc, len(data), idx, len(fragments), fragment)
 			if err := p.enqueueFrame(frame, false); err != nil {
@@ -257,7 +257,9 @@ func (p *streamTransport) Close() error {
 		if p.writerUp.Load() {
 			<-p.writerDone
 		}
-		return p.stream.Close()
+		if err := p.stream.Close(); err != nil {
+			return fmt.Errorf("close stream: %w", err)
+		}
 	}
 	return nil
 }
@@ -301,6 +303,47 @@ func (p *streamTransport) Features() transport.Features {
 	}
 }
 
+func (p *streamTransport) writeIdleFrame(enc *ffmpegEncoder, frameDuration time.Duration) {
+	p.idleFrameMu.Lock()
+	cached := p.idleFrame
+	p.idleFrameMu.Unlock()
+
+	if cached == nil {
+		rawFrame, err := p.renderFrame(nil)
+		if err != nil {
+			logger.Debugf("videochannel render idle error: %v", err)
+			return
+		}
+		sample, err := enc.EncodeFrame(rawFrame)
+		if err != nil {
+			logger.Warnf("videochannel encoder idle error: %v", err)
+			return
+		}
+		p.idleFrameMu.Lock()
+		p.idleFrame = sample
+		p.idleFrameMu.Unlock()
+		cached = sample
+	}
+
+	_ = p.track.WriteSample(media.Sample{Data: cached, Duration: frameDuration})
+}
+
+func (p *streamTransport) writePayloadFrame(enc *ffmpegEncoder, payload []byte, frameDuration time.Duration) {
+	rawFrame, err := p.renderFrame(payload)
+	if err != nil {
+		logger.Debugf("videochannel render error: %v", err)
+		return
+	}
+
+	sample, err := enc.EncodeFrame(rawFrame)
+	if err != nil {
+		logger.Warnf("videochannel encoder error: %v", err)
+		return
+	}
+
+	_ = p.track.WriteSample(media.Sample{Data: sample, Duration: frameDuration})
+}
+
 func (p *streamTransport) writerLoop() {
 	defer close(p.writerDone)
 	defer func() {
@@ -334,56 +377,22 @@ func (p *streamTransport) writerLoop() {
 				continue
 			}
 
-			// idle frame: payload is nil — reuse previously encoded sample to avoid
-			// re-rendering and re-encoding an identical blank frame every tick.
 			if payload == nil {
-				p.idleFrameMu.Lock()
-				cached := p.idleFrame
-				p.idleFrameMu.Unlock()
-
-				if cached == nil {
-					// first time — render + encode once, then cache
-					rawFrame, err := renderVisualFrame(nil, p.videoW, p.videoH, p.videoCodec, p.videoQRRecovery, p.videoTileModule, p.videoTileRS)
-					if err != nil {
-						logger.Debugf("videochannel render idle error: %v", err)
-						continue
-					}
-					sample, err := enc.EncodeFrame(rawFrame)
-					if err != nil {
-						logger.Warnf("videochannel encoder idle error: %v", err)
-						continue
-					}
-					p.idleFrameMu.Lock()
-					p.idleFrame = sample
-					p.idleFrameMu.Unlock()
-					cached = sample
-				}
-
-				_ = p.track.WriteSample(media.Sample{
-					Data:     cached,
-					Duration: frameDuration,
-				})
-				continue
+				p.writeIdleFrame(enc, frameDuration)
+			} else {
+				p.writePayloadFrame(enc, payload, frameDuration)
 			}
-
-			rawFrame, err := renderVisualFrame(payload, p.videoW, p.videoH, p.videoCodec, p.videoQRRecovery, p.videoTileModule, p.videoTileRS)
-			if err != nil {
-				logger.Debugf("videochannel render error: %v", err)
-				continue
-			}
-
-			sample, err := enc.EncodeFrame(rawFrame)
-			if err != nil {
-				logger.Warnf("videochannel encoder error: %v", err)
-				continue
-			}
-
-			_ = p.track.WriteSample(media.Sample{
-				Data:     sample,
-				Duration: frameDuration,
-			})
 		}
 	}
+}
+
+func (p *streamTransport) renderFrame(payload []byte) ([]byte, error) {
+	return renderVisualFrame(
+		payload,
+		p.videoW, p.videoH,
+		p.videoCodec, p.videoQRRecovery,
+		p.videoTileModule, p.videoTileRS,
+	)
 }
 
 func (p *streamTransport) nextOutboundFrame() ([]byte, bool) {
@@ -425,6 +434,61 @@ func (p *streamTransport) enqueueFrame(frame []byte, priority bool) error {
 	}
 }
 
+func (p *streamTransport) popDecoderFrames(decoder *ffmpegDecoder) {
+	defer func() {
+		p.decoderMu.Lock()
+		if p.decoder == decoder {
+			p.decoder = nil
+		}
+		p.decoderMu.Unlock()
+		_ = decoder.Close()
+	}()
+
+	for {
+		select {
+		case <-p.closeCh:
+			return
+		default:
+		}
+
+		frame, err := decoder.PopFrame()
+		if err != nil {
+			if !errors.Is(err, ErrTransportClosed) && !p.closed.Load() {
+				logger.Warnf("videochannel decoder pop error: %v", err)
+			}
+			return
+		}
+		p.handleFrame(frame)
+	}
+}
+
+func (p *streamTransport) readDecoderInput(track *webrtc.TrackRemote, decoder *ffmpegDecoder, codec codecSpec) {
+	sb := samplebuilder.New(sampleBuilderMaxLate, codec.depacketizer(), track.Codec().ClockRate)
+	for {
+		select {
+		case <-p.closeCh:
+			return
+		default:
+		}
+
+		packet, _, err := track.ReadRTP()
+		if err != nil {
+			sb.Flush()
+			return
+		}
+
+		sb.Push(packet)
+		for sample := sb.Pop(); sample != nil; sample = sb.Pop() {
+			if err := decoder.PushSample(sample.Data); err != nil {
+				if !p.closed.Load() {
+					logger.Warnf("videochannel decoder push error: %v", err)
+				}
+				return
+			}
+		}
+	}
+}
+
 func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	codec, ok := codecSpecForMime(track.Codec().MimeType)
 	if !ok {
@@ -432,7 +496,7 @@ func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc
 		return
 	}
 
-	decoder, err := newFFmpegDecoder(codec, p.videoW, p.videoH, p.videoFPS, p.videoHW)
+	decoder, err := newFFmpegDecoder(p.runCtx, codec, p.videoW, p.videoH, p.videoFPS, p.videoHW)
 	if err != nil {
 		logger.Warnf("videochannel decoder init failed: %v", err)
 		return
@@ -450,60 +514,8 @@ func (p *streamTransport) handleRemoteTrack(track *webrtc.TrackRemote, _ *webrtc
 	p.decoder = decoder
 	p.decoderMu.Unlock()
 
-	go func() {
-		defer func() {
-			p.decoderMu.Lock()
-			if p.decoder == decoder {
-				p.decoder = nil
-			}
-			p.decoderMu.Unlock()
-			_ = decoder.Close()
-		}()
-
-		for {
-			select {
-			case <-p.closeCh:
-				return
-			default:
-			}
-
-			frame, err := decoder.PopFrame()
-			if err != nil {
-				if !errors.Is(err, ErrTransportClosed) && !p.closed.Load() {
-					logger.Warnf("videochannel decoder pop error: %v", err)
-				}
-				return
-			}
-			p.handleFrame(frame)
-		}
-	}()
-
-	go func() {
-		sb := samplebuilder.New(sampleBuilderMaxLate, codec.depacketizer(), track.Codec().ClockRate)
-		for {
-			select {
-			case <-p.closeCh:
-				return
-			default:
-			}
-
-			packet, _, err := track.ReadRTP()
-			if err != nil {
-				sb.Flush()
-				return
-			}
-
-			sb.Push(packet)
-			for sample := sb.Pop(); sample != nil; sample = sb.Pop() {
-				if err := decoder.PushSample(sample.Data); err != nil {
-					if !p.closed.Load() {
-						logger.Warnf("videochannel decoder push error: %v", err)
-					}
-					return
-				}
-			}
-		}
-	}()
+	go p.popDecoderFrames(decoder)
+	go p.readDecoderInput(track, decoder, codec)
 }
 
 func (p *streamTransport) handleFrame(frame []byte) {
@@ -531,14 +543,7 @@ func (p *streamTransport) handleFrame(frame []byte) {
 	}
 }
 
-func (p *streamTransport) handleInboundFrame(frame transportFrame) {
-	p.recvMu.Lock()
-	if crc, ok := p.delivered[frame.seq]; ok && crc == frame.crc {
-		p.recvMu.Unlock()
-		p.sendAck(frame.seq, frame.crc)
-		return
-	}
-
+func (p *streamTransport) upsertInbound(frame transportFrame) (*inboundMessage, bool) {
 	msg, ok := p.inbound[frame.seq]
 	if !ok || msg.crc != frame.crc || msg.totalLen != frame.totalLen || len(msg.frags) != int(frame.fragTotal) {
 		msg = &inboundMessage{
@@ -549,33 +554,45 @@ func (p *streamTransport) handleInboundFrame(frame transportFrame) {
 		}
 		p.inbound[frame.seq] = msg
 	}
-
 	if int(frame.fragIdx) >= len(msg.frags) {
-		p.recvMu.Unlock()
-		return
+		return nil, false
 	}
-
 	if msg.frags[frame.fragIdx] == nil {
 		chunk := make([]byte, len(frame.payload))
 		copy(chunk, frame.payload)
 		msg.frags[frame.fragIdx] = chunk
 		msg.remain--
 	}
+	return msg, msg.remain == 0
+}
 
-	if msg.remain > 0 {
+func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
+	data := make([]byte, 0, msg.totalLen)
+	for _, frag := range msg.frags {
+		data = append(data, frag...)
+	}
+	if uint32(len(data)) > msg.totalLen { //nolint:gosec
+		data = data[:msg.totalLen]
+	}
+	return data
+}
+
+func (p *streamTransport) handleInboundFrame(frame transportFrame) {
+	p.recvMu.Lock()
+	if crc, ok := p.delivered[frame.seq]; ok && crc == frame.crc {
+		p.recvMu.Unlock()
+		p.sendAck(frame.seq, frame.crc)
+		return
+	}
+
+	msg, complete := p.upsertInbound(frame)
+	if msg == nil || !complete {
 		p.recvMu.Unlock()
 		return
 	}
 
 	delete(p.inbound, frame.seq)
-	data := make([]byte, 0, msg.totalLen)
-	for _, frag := range msg.frags {
-		data = append(data, frag...)
-	}
-
-	if uint32(len(data)) > msg.totalLen {
-		data = data[:msg.totalLen]
-	}
+	data := p.assembleMessage(msg)
 
 	if crc32.ChecksumIEEE(data) != msg.crc {
 		p.recvMu.Unlock()

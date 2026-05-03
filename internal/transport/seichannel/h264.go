@@ -3,11 +3,20 @@ package seichannel
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/pion/webrtc/v4/pkg/media/h264reader"
 )
 
+var (
+	// ErrSEIPayloadTruncated is returned when the SEI payload is shorter than expected.
+	ErrSEIPayloadTruncated = errors.New("sei payload truncated")
+	// ErrSEIValueTruncated is returned when reading a SEI length-value runs past the buffer.
+	ErrSEIValueTruncated = errors.New("sei value truncated")
+)
+
+//nolint:gochecknoglobals
 var (
 	videoSEIUUID = [16]byte{
 		0x5d, 0xc0, 0x3b, 0xa8,
@@ -21,19 +30,16 @@ var (
 	baseIDR = mustDecodeHex("6588843a2628000902e0")
 )
 
-func buildVideoAccessUnit(payload []byte) ([]byte, error) {
+func buildVideoAccessUnit(payload []byte) []byte {
 	out := make([]byte, 0, len(baseSPS)+len(basePPS)+len(baseIDR)+64+len(payload))
 	out = appendStartCode(out, baseSPS)
 	out = appendStartCode(out, basePPS)
 	if len(payload) > 0 {
-		sei, err := buildSEINAL(payload)
-		if err != nil {
-			return nil, err
-		}
+		sei := buildSEINAL(payload)
 		out = appendStartCode(out, sei)
 	}
 	out = appendStartCode(out, baseIDR)
-	return out, nil
+	return out
 }
 
 func extractVideoPayloads(accessUnit []byte) ([][]byte, error) {
@@ -63,7 +69,7 @@ func extractVideoPayloads(accessUnit []byte) ([][]byte, error) {
 	}
 }
 
-func buildSEINAL(payload []byte) ([]byte, error) {
+func buildSEINAL(payload []byte) []byte {
 	userData := make([]byte, 0, len(videoSEIUUID)+len(payload))
 	userData = append(userData, videoSEIUUID[:]...)
 	userData = append(userData, payload...)
@@ -74,9 +80,11 @@ func buildSEINAL(payload []byte) ([]byte, error) {
 	rbsp = append(rbsp, userData...)
 	rbsp = append(rbsp, 0x80)
 
-	out := []byte{0x06}
-	out = append(out, escapeRBSP(rbsp)...)
-	return out, nil
+	escaped := escapeRBSP(rbsp)
+	out := make([]byte, 0, 1+len(escaped))
+	out = append(out, 0x06)
+	out = append(out, escaped...)
+	return out
 }
 
 func extractTransportSEI(rbsp []byte) ([][]byte, error) {
@@ -101,7 +109,7 @@ func extractTransportSEI(rbsp []byte) ([][]byte, error) {
 		pos = next
 
 		if pos+payloadSize > len(data) {
-			return nil, fmt.Errorf("sei payload truncated")
+			return nil, ErrSEIPayloadTruncated
 		}
 
 		payload := data[pos : pos+payloadSize]
@@ -127,14 +135,14 @@ func appendSEIValue(dst []byte, value int) []byte {
 		dst = append(dst, 0xff)
 		value -= 0xff
 	}
-	return append(dst, byte(value))
+	return append(dst, byte(value)) //nolint:gosec
 }
 
 func consumeSEIValue(data []byte, pos int) (int, int, error) {
 	value := 0
 	for {
 		if pos >= len(data) {
-			return 0, pos, fmt.Errorf("sei value truncated")
+			return 0, pos, ErrSEIValueTruncated
 		}
 		b := int(data[pos])
 		pos++
@@ -170,11 +178,11 @@ func escapeRBSP(rbsp []byte) []byte {
 
 func unescapeRBSP(rbsp []byte) []byte {
 	out := make([]byte, 0, len(rbsp))
-	for i := 0; i < len(rbsp); i++ {
-		if i >= 2 && rbsp[i] == 0x03 && rbsp[i-1] == 0x00 && rbsp[i-2] == 0x00 {
+	for i, b := range rbsp {
+		if i >= 2 && b == 0x03 && rbsp[i-1] == 0x00 && rbsp[i-2] == 0x00 {
 			continue
 		}
-		out = append(out, rbsp[i])
+		out = append(out, b)
 	}
 	return out
 }
