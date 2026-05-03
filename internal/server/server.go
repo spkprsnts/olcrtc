@@ -39,6 +39,7 @@ type Server struct {
 	conn           *muxconn.Conn
 	session        *smux.Session
 	sessMu         sync.RWMutex
+	reinstallMu    sync.Mutex
 	wg             sync.WaitGroup
 	dnsServer      string
 	resolver       *net.Resolver
@@ -229,7 +230,21 @@ func (s *Server) installSession() {
 
 func (s *Server) handleReconnect() {
 	logger.Infof("server link reconnect — tearing down smux session")
+	s.sessMu.RLock()
+	current := s.session
+	s.sessMu.RUnlock()
+	s.reinstallSession(current)
+}
+
+func (s *Server) reinstallSession(dead *smux.Session) {
+	s.reinstallMu.Lock()
+	defer s.reinstallMu.Unlock()
+
 	s.sessMu.Lock()
+	if s.session != dead {
+		s.sessMu.Unlock()
+		return
+	}
 	if s.session != nil {
 		_ = s.session.Close()
 		s.session = nil
@@ -281,8 +296,8 @@ func (s *Server) serve(ctx context.Context) {
 				return
 			default:
 			}
-			logger.Infof("AcceptStream returned %v — waiting for new session", err)
-			s.waitForNewSession(ctx, sess)
+			logger.Infof("AcceptStream returned %v — reinstalling session", err)
+			s.reinstallSession(sess)
 			continue
 		}
 
@@ -291,22 +306,6 @@ func (s *Server) serve(ctx context.Context) {
 			defer s.wg.Done()
 			s.handleStream(ctx, stream)
 		}()
-	}
-}
-
-func (s *Server) waitForNewSession(ctx context.Context, dead *smux.Session) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(50 * time.Millisecond):
-		}
-		s.sessMu.RLock()
-		current := s.session
-		s.sessMu.RUnlock()
-		if current != dead {
-			return
-		}
 	}
 }
 
