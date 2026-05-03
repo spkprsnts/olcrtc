@@ -5,25 +5,23 @@
 ![License](https://img.shields.io/badge/license-WTFPL-0D1117?style=flat-square&logo=open-source-initiative&logoColor=green&labelColor=0D1117)
 ![Golang](https://img.shields.io/badge/-Golang-0D1117?style=flat-square&logo=go&logoColor=00A7D0)
 
-# Project rewriting and add [VideoChannel](https://github.com/openlibrecommunity/olcrtc/tree/transport/videochannel)
-
 </div>
 
 
 ## About
 olcRTC - across the Sea
 
-Project that allows users to bypass blocking by parasitizing and tunneling on unblocked and whitelisted services in Russia, use telemost, Max, mail and API in the future
+Project that allows users to bypass blocking by parasitizing and tunneling on unblocked and whitelisted services in Russia, use legal webRTC services
 
 ## satus
 
-alpha
+beta
 <br>
 see all info in [issues](https://github.com/openlibrecommunity/olcrtc/issues)
 <br>
 issues? contact us at [@openlibrecommunity](https://t.me/openlibrecommunity)
 <br>
-or wait for the release or at least a beta
+or wait for the release or at least a release
 
 
 ## build
