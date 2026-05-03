@@ -22,6 +22,11 @@ import (
 const (
 	maxDataChannelMessageSize = 12288
 	sendDelay                 = 2 * time.Millisecond
+
+	keyRoomID    = "roomId"
+	keyEvent     = "event"
+	keyRequestID = "requestId"
+	keyPayload   = "payload"
 )
 
 var (
@@ -290,10 +295,10 @@ func (p *Peer) dialWebSocket() error {
 
 func (p *Peer) sendJoin() error {
 	joinMsg := map[string]any{
-		"roomId":    p.roomInfo.RoomID,
-		"event":     "join",
-		"requestId": uuid.New().String(),
-		"payload": map[string]any{
+		keyRoomID:    p.roomInfo.RoomID,
+		keyEvent:     "join",
+		keyRequestID: uuid.New().String(),
+		keyPayload: map[string]any{
 			"password":        p.roomInfo.Password,
 			"participantName": p.name,
 			"supportedFeatures": map[string]any{
@@ -416,8 +421,8 @@ func (p *Peer) handleSignaling(_ context.Context) {
 
 		p.updateWSDeadline()
 
-		event, _ := msg["event"].(string)
-		payload, _ := msg["payload"].(map[string]any)
+		event, _ := msg[keyEvent].(string)
+		payload, _ := msg[keyPayload].(map[string]any)
 
 		switch event {
 		case "join-response":
@@ -514,11 +519,11 @@ func (p *Peer) handleSubscriberOffer(payload map[string]any) {
 
 	p.wsMu.Lock()
 	_ = p.ws.WriteJSON(map[string]any{
-		"roomId":    p.roomInfo.RoomID,
-		"event":     "media-in",
+		keyRoomID:    p.roomInfo.RoomID,
+		keyEvent:     "media-in",
 		"groupId":   p.groupID,
-		"requestId": uuid.New().String(),
-		"payload": map[string]any{
+		keyRequestID: uuid.New().String(),
+		keyPayload: map[string]any{
 			"method": "rtc:answer",
 			"description": map[string]any{
 				"type": "answer",
@@ -546,11 +551,11 @@ func (p *Peer) sendPublisherOffer() {
 
 	p.wsMu.Lock()
 	_ = p.ws.WriteJSON(map[string]any{
-		"roomId":    p.roomInfo.RoomID,
-		"event":     "media-in",
+		keyRoomID:    p.roomInfo.RoomID,
+		keyEvent:     "media-in",
 		"groupId":   p.groupID,
-		"requestId": uuid.New().String(),
-		"payload": map[string]any{
+		keyRequestID: uuid.New().String(),
+		keyPayload: map[string]any{
 			"method": "rtc:offer",
 			"description": map[string]any{
 				"type": "offer",

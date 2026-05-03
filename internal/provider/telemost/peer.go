@@ -27,6 +27,10 @@ const (
 	defaultSendDelayLow         = 2 * time.Millisecond
 	defaultSendDelayMax         = 12 * time.Millisecond
 	defaultTelemetryInterval    = 20 * time.Second
+
+	keyUID         = "uid"
+	keyDescription = "description"
+	keyPcSeq       = "pcSeq"
 )
 
 var (
@@ -470,19 +474,19 @@ func (p *Peer) Send(data []byte) error {
 
 func (p *Peer) sendHello() error {
 	hello := map[string]interface{}{
-		"uid": uuid.New().String(),
+		keyUID: uuid.New().String(),
 		"hello": map[string]interface{}{
 			"participantMeta": map[string]interface{}{
 				"name":        p.name,
 				"role":        "SPEAKER",
-				"description": "",
+				keyDescription: "",
 				"sendAudio":   false,
 				"sendVideo":   p.hasLocalVideoTracks(),
 			},
 			"participantAttributes": map[string]interface{}{
 				"name":        p.name,
 				"role":        "SPEAKER",
-				"description": "",
+				keyDescription: "",
 			},
 			"sendAudio":         false,
 			"sendVideo":         p.hasLocalVideoTracks(),
@@ -528,7 +532,7 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 
 		p.updateWSDeadline()
 
-		uid, _ := msg["uid"].(string)
+		uid, _ := msg[keyUID].(string)
 		p.handleMessageEvents(ctx, msg, uid)
 
 		if isConferenceEndMessage(msg) {
@@ -617,9 +621,9 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string, sendPub 
 
 	p.wsMu.Lock()
 	_ = p.ws.WriteJSON(map[string]interface{}{
-		"uid": uuid.New().String(),
+		keyUID: uuid.New().String(),
 		"subscriberSdpAnswer": map[string]interface{}{
-			"pcSeq": int(pcSeq),
+			keyPcSeq: int(pcSeq),
 			"sdp":   answer.SDP,
 		},
 	})
@@ -650,9 +654,9 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string, sendPub 
 
 	p.wsMu.Lock()
 	_ = p.ws.WriteJSON(map[string]interface{}{
-		"uid": uuid.New().String(),
+		keyUID: uuid.New().String(),
 		"publisherSdpOffer": map[string]interface{}{
-			"pcSeq":  1,
+			keyPcSeq:  1,
 			"sdp":    pubOffer.SDP,
 			"tracks": p.publisherTrackDescriptions(),
 		},
@@ -666,7 +670,7 @@ func (p *Peer) sendSetSlots() error {
 	defer p.wsMu.Unlock()
 
 	if err := p.ws.WriteJSON(map[string]interface{}{
-		"uid": uuid.New().String(),
+		keyUID: uuid.New().String(),
 		"setSlots": map[string]interface{}{
 			"slots": []map[string]int{
 				{"width": 1280, "height": 720},
@@ -792,7 +796,7 @@ func (p *Peer) publisherTrackDescriptions() []map[string]interface{} {
 			"label":          track.ID(),
 			"codecs":         map[string]interface{}{},
 			"groupId":        1,
-			"description":    "",
+			keyDescription:    "",
 		})
 	}
 
@@ -910,7 +914,7 @@ func (p *Peer) sendAck(uid string) {
 	defer p.wsMu.Unlock()
 
 	_ = p.ws.WriteJSON(map[string]interface{}{
-		"uid": uid,
+		keyUID: uid,
 		"ack": map[string]interface{}{
 			"status": map[string]interface{}{"code": "OK"},
 		},
@@ -967,7 +971,7 @@ func (p *Peer) sendPong(uid string) {
 	defer p.wsMu.Unlock()
 
 	_ = p.ws.WriteJSON(map[string]interface{}{
-		"uid":  uid,
+		keyUID:  uid,
 		"pong": map[string]interface{}{},
 	})
 }
@@ -1128,13 +1132,13 @@ func (p *Peer) setupICEHandlers() {
 		init := c.ToJSON()
 		p.wsMu.Lock()
 		_ = p.ws.WriteJSON(map[string]interface{}{
-			"uid": uuid.New().String(),
+			keyUID: uuid.New().String(),
 			"webrtcIceCandidate": map[string]interface{}{
 				"candidate":     init.Candidate,
 				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
 				"target":        "SUBSCRIBER",
-				"pcSeq":         1,
+				keyPcSeq:         1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -1147,13 +1151,13 @@ func (p *Peer) setupICEHandlers() {
 		init := c.ToJSON()
 		p.wsMu.Lock()
 		_ = p.ws.WriteJSON(map[string]interface{}{
-			"uid": uuid.New().String(),
+			keyUID: uuid.New().String(),
 			"webrtcIceCandidate": map[string]interface{}{
 				"candidate":     init.Candidate,
 				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
 				"target":        "PUBLISHER",
-				"pcSeq":         1,
+				keyPcSeq:         1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -1169,7 +1173,7 @@ func (p *Peer) sendLeave(uid string) bool {
 	}
 
 	leave := map[string]interface{}{
-		"uid":   uid,
+		keyUID:   uid,
 		"leave": map[string]interface{}{},
 	}
 
@@ -1271,7 +1275,7 @@ func (p *Peer) sendAppPing() bool {
 	defer p.wsMu.Unlock()
 	if p.ws != nil {
 		if err := p.ws.WriteJSON(map[string]interface{}{
-			"uid":  uuid.New().String(),
+			keyUID:  uuid.New().String(),
 			"ping": map[string]interface{}{},
 		}); err != nil {
 			logger.Debugf("app ping error: %v", err)

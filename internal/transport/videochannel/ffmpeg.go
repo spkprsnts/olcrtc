@@ -22,6 +22,10 @@ import (
 
 const (
 	ffmpegFrameTimeout = 10 * time.Second
+
+	argCodecVideo = "-c:v"
+	argPixFmt     = "-pix_fmt"
+	pixFmtYUV420P = "yuv420p"
 )
 
 var (
@@ -74,11 +78,11 @@ func h264CodecSpec() codecSpec {
 		},
 		depacketizer: func() rtp.Depacketizer { return &codecs.H264Packet{} },
 		encodeArgs: []string{
-			"-c:v", "libx264",
+			argCodecVideo, "libx264",
 			"-preset", "ultrafast",
 			"-tune", "zerolatency",
 			"-g", "1",
-			"-pix_fmt", "yuv420p",
+			argPixFmt, pixFmtYUV420P,
 		},
 	}
 }
@@ -94,13 +98,13 @@ func vp9CodecSpec() codecSpec {
 		},
 		depacketizer: func() rtp.Depacketizer { return &codecs.VP9Packet{} },
 		encodeArgs: []string{
-			"-c:v", "libvpx-vp9",
+			argCodecVideo, "libvpx-vp9",
 			"-deadline", "realtime",
 			"-cpu-used", "8",
 			"-error-resilient", "1",
 			"-static-thresh", "0",
 			"-g", "1",
-			"-pix_fmt", "yuv420p",
+			argPixFmt, pixFmtYUV420P,
 		},
 	}
 }
@@ -116,13 +120,13 @@ func vp8CodecSpec() codecSpec {
 		},
 		depacketizer: func() rtp.Depacketizer { return &codecs.VP8Packet{} },
 		encodeArgs: []string{
-			"-c:v", "libvpx",
+			argCodecVideo, "libvpx",
 			"-deadline", "realtime",
 			"-cpu-used", "8",
 			"-error-resilient", "1",
 			"-static-thresh", "0",
 			"-g", "1",
-			"-pix_fmt", "yuv420p",
+			argPixFmt, pixFmtYUV420P,
 		},
 	}
 }
@@ -149,7 +153,7 @@ func buildEncoderArgs(spec codecSpec, vcodec string, width, height, fps int, bit
 	args := []string{
 		"-loglevel", "error", "-threads", "1",
 		"-f", "rawvideo",
-		"-pix_fmt", "gray",
+		argPixFmt, "gray",
 		"-video_size", strconv.Itoa(width) + "x" + strconv.Itoa(height),
 		"-framerate", strconv.Itoa(fps),
 		"-i", "pipe:0",
@@ -157,12 +161,12 @@ func buildEncoderArgs(spec codecSpec, vcodec string, width, height, fps int, bit
 	}
 
 	if strings.HasSuffix(vcodec, "_nvenc") {
-		args = append(args, "-c:v", vcodec, "-preset", "p1", "-tune", "ull", "-rc", "vbr")
+		args = append(args, argCodecVideo, vcodec, "-preset", "p1", "-tune", "ull", "-rc", "vbr")
 	} else {
 		args = append(args, spec.encodeArgs...)
 	}
 
-	args = append(args, "-g", "1", "-pix_fmt", "yuv420p", "-b:v", bitrate)
+	args = append(args, "-g", "1", argPixFmt, pixFmtYUV420P, "-b:v", bitrate)
 
 	if spec.mimeType == webrtc.MimeTypeH264 {
 		return append(args, "-f", "h264", "pipe:1")
@@ -366,7 +370,7 @@ func buildDecoderArgs(spec codecSpec, decoderName string, width, height int, out
 		"-i", "pipe:0",
 		"-an",
 		"-vf", vfFilter,
-		"-pix_fmt", outputPixFmt,
+		argPixFmt, outputPixFmt,
 		"-f", "rawvideo",
 		"pipe:1",
 	)
