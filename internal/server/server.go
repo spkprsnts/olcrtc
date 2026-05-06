@@ -51,7 +51,7 @@ type Server struct {
 // ConnectRequest is a message from the client to establish a new connection.
 type ConnectRequest struct {
 	Cmd      string `json:"cmd"`
-	ClientID string `json:"client_id"`
+	ClientID string `json:"clientId"`
 	Addr     string `json:"addr"`
 	Port     int    `json:"port"`
 }
