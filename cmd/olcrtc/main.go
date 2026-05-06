@@ -54,6 +54,10 @@ type config struct {
 	videoTileRS     int
 	vp8FPS          int
 	vp8BatchSize    int
+	seiFPS          int
+	seiBatchSize    int
+	seiFragmentSize int
+	seiAckTimeoutMS int
 }
 
 func main() {
@@ -160,6 +164,10 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 		"Tile Reed-Solomon parity percent 0..200 (videochannel tile only, default 20)")
 	fs.IntVar(&cfg.vp8FPS, "vp8-fps", 0, "VP8 frames per second (vp8channel only, default 25)")
 	fs.IntVar(&cfg.vp8BatchSize, "vp8-batch", 0, "VP8 frames per tick (vp8channel only, default 1)")
+	fs.IntVar(&cfg.seiFPS, "fps", 0, "Frames per second for transports that use video timing (seichannel)")
+	fs.IntVar(&cfg.seiBatchSize, "batch", 0, "Transport frames per tick for batched transports (seichannel)")
+	fs.IntVar(&cfg.seiFragmentSize, "frag", 0, "Fragment size in bytes for fragmented transports (seichannel)")
+	fs.IntVar(&cfg.seiAckTimeoutMS, "ack-ms", 0, "ACK timeout in milliseconds for reliable visual transports (seichannel)")
 
 	return cfg, fs.Parse(args)
 }
@@ -222,6 +230,10 @@ func toSessionConfig(cfg config) session.Config {
 		VideoTileRS:     cfg.videoTileRS,
 		VP8FPS:          cfg.vp8FPS,
 		VP8BatchSize:    cfg.vp8BatchSize,
+		SEIFPS:          cfg.seiFPS,
+		SEIBatchSize:    cfg.seiBatchSize,
+		SEIFragmentSize: cfg.seiFragmentSize,
+		SEIAckTimeoutMS: cfg.seiAckTimeoutMS,
 	}
 }
 

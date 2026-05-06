@@ -72,6 +72,14 @@ var (
 	ErrVP8FPSRequired = errors.New("vp8 fps required for vp8channel (use -vp8-fps)")
 	// ErrVP8BatchSizeRequired indicates that vp8 batch size is required for vp8channel.
 	ErrVP8BatchSizeRequired = errors.New("vp8 batch size required for vp8channel (use -vp8-batch)")
+	// ErrSEIFPSRequired indicates that seichannel fps is required.
+	ErrSEIFPSRequired = errors.New("fps required for seichannel (use -fps)")
+	// ErrSEIBatchSizeRequired indicates that seichannel batch size is required.
+	ErrSEIBatchSizeRequired = errors.New("batch size required for seichannel (use -batch)")
+	// ErrSEIFragmentSizeRequired indicates that seichannel fragment size is required.
+	ErrSEIFragmentSizeRequired = errors.New("fragment size required for seichannel (use -frag)")
+	// ErrSEIAckTimeoutRequired indicates that seichannel ack timeout is required.
+	ErrSEIAckTimeoutRequired = errors.New("ack timeout required for seichannel (use -ack-ms)")
 
 	// ErrSOCKSHostRequired indicates that socks host is required for cnc mode.
 	ErrSOCKSHostRequired = errors.New("socks host required for cnc mode (use -socks-host)")
@@ -83,23 +91,23 @@ var (
 
 // Config holds runtime session settings.
 type Config struct {
-	Mode           string
-	Link           string
-	Transport      string
-	Carrier        string
-	RoomID         string
-	ClientID       string
-	KeyHex         string
-	SOCKSHost      string
-	SOCKSPort      int
-	DNSServer      string
-	SOCKSProxyAddr string
-	SOCKSProxyPort int
-	VideoWidth     int
-	VideoHeight    int
-	VideoFPS       int
-	VideoBitrate   string
-	VideoHW        string
+	Mode            string
+	Link            string
+	Transport       string
+	Carrier         string
+	RoomID          string
+	ClientID        string
+	KeyHex          string
+	SOCKSHost       string
+	SOCKSPort       int
+	DNSServer       string
+	SOCKSProxyAddr  string
+	SOCKSProxyPort  int
+	VideoWidth      int
+	VideoHeight     int
+	VideoFPS        int
+	VideoBitrate    string
+	VideoHW         string
 	VideoQRSize     int
 	VideoQRRecovery string
 	VideoCodec      string
@@ -107,6 +115,10 @@ type Config struct {
 	VideoTileRS     int
 	VP8FPS          int
 	VP8BatchSize    int
+	SEIFPS          int
+	SEIBatchSize    int
+	SEIFragmentSize int
+	SEIAckTimeoutMS int
 }
 
 // RegisterDefaults registers built-in providers and transports.
@@ -207,6 +219,8 @@ func validateTransportConfig(cfg Config) error {
 		return validateVideoChannel(cfg)
 	case "vp8channel":
 		return validateVP8Channel(cfg)
+	case "seichannel":
+		return validateSEIChannel(cfg)
 	default:
 		return nil
 	}
@@ -247,6 +261,22 @@ func validateVP8Channel(cfg Config) error {
 	}
 	if cfg.VP8BatchSize == 0 {
 		return ErrVP8BatchSizeRequired
+	}
+	return nil
+}
+
+func validateSEIChannel(cfg Config) error {
+	if cfg.SEIFPS == 0 {
+		return ErrSEIFPSRequired
+	}
+	if cfg.SEIBatchSize == 0 {
+		return ErrSEIBatchSizeRequired
+	}
+	if cfg.SEIFragmentSize == 0 {
+		return ErrSEIFragmentSizeRequired
+	}
+	if cfg.SEIAckTimeoutMS == 0 {
+		return ErrSEIAckTimeoutRequired
 	}
 	return nil
 }
@@ -293,6 +323,10 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.VideoTileRS,
 			cfg.VP8FPS,
 			cfg.VP8BatchSize,
+			cfg.SEIFPS,
+			cfg.SEIBatchSize,
+			cfg.SEIFragmentSize,
+			cfg.SEIAckTimeoutMS,
 		); err != nil {
 			return fmt.Errorf("server: %w", err)
 		}
@@ -322,6 +356,10 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.VideoTileRS,
 			cfg.VP8FPS,
 			cfg.VP8BatchSize,
+			cfg.SEIFPS,
+			cfg.SEIBatchSize,
+			cfg.SEIFragmentSize,
+			cfg.SEIAckTimeoutMS,
 		); err != nil {
 			return fmt.Errorf("client: %w", err)
 		}

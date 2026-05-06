@@ -67,7 +67,13 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 		return &fakeVideoSession{stream: stream}, nil
 	})
 
-	trIface, err := New(context.Background(), transport.Config{Carrier: name})
+	trIface, err := New(context.Background(), transport.Config{
+		Carrier:         name,
+		SEIFPS:          40,
+		SEIBatchSize:    3,
+		SEIFragmentSize: 512,
+		SEIAckTimeoutMS: 1500,
+	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -93,6 +99,11 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 	}
 	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 {
 		t.Fatalf("Features() = %+v", features)
+	}
+	if tr.fragmentSize != 512 || tr.batchSize != 3 || tr.frameInterval != 25*time.Millisecond ||
+		tr.ackTimeout != 1500*time.Millisecond {
+		t.Fatalf("seichannel settings fragment=%d batch=%d interval=%v ack=%v",
+			tr.fragmentSize, tr.batchSize, tr.frameInterval, tr.ackTimeout)
 	}
 	if err := tr.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)

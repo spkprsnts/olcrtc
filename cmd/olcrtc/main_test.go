@@ -38,11 +38,17 @@ func TestToSessionConfigAndFirstNonEmpty(t *testing.T) {
 		videoTileRS:     20,
 		vp8FPS:          25,
 		vp8BatchSize:    8,
+		seiFPS:          40,
+		seiBatchSize:    3,
+		seiFragmentSize: 512,
+		seiAckTimeoutMS: 1500,
 	}
 
 	got := toSessionConfig(cfg)
 	if got.Mode != cfg.mode || got.Carrier != "jazz" || got.SOCKSPort != cfg.socksPort ||
-		got.VideoTileRS != cfg.videoTileRS || got.VP8BatchSize != cfg.vp8BatchSize {
+		got.VideoTileRS != cfg.videoTileRS || got.VP8BatchSize != cfg.vp8BatchSize ||
+		got.SEIFPS != cfg.seiFPS || got.SEIBatchSize != cfg.seiBatchSize ||
+		got.SEIFragmentSize != cfg.seiFragmentSize || got.SEIAckTimeoutMS != cfg.seiAckTimeoutMS {
 		t.Fatalf("toSessionConfig() = %+v", got)
 	}
 
@@ -88,13 +94,18 @@ func TestParseFlagsFrom(t *testing.T) {
 		"-video-tile-rs", "40",
 		"-vp8-fps", "24",
 		"-vp8-batch", "3",
+		"-fps", "40",
+		"-batch", "4",
+		"-frag", "512",
+		"-ack-ms", "1500",
 	}, flag.ContinueOnError)
 	if err != nil {
 		t.Fatalf("parseFlagsFrom() error = %v", err)
 	}
 	if cfg.mode != "srv" || cfg.carrier != "telemost" || cfg.roomID != "room" ||
 		cfg.debug != true || cfg.videoCodec != "tile" || cfg.videoTileRS != 40 ||
-		cfg.vp8FPS != 24 || cfg.vp8BatchSize != 3 {
+		cfg.vp8FPS != 24 || cfg.vp8BatchSize != 3 || cfg.seiFPS != 40 ||
+		cfg.seiBatchSize != 4 || cfg.seiFragmentSize != 512 || cfg.seiAckTimeoutMS != 1500 {
 		t.Fatalf("parseFlagsFrom() = %+v", cfg)
 	}
 

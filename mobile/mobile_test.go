@@ -179,6 +179,10 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 		videoTileRS int,
 		vp8FPS int,
 		vp8BatchSize int,
+		seiFPS int,
+		seiBatchSize int,
+		seiFragmentSize int,
+		seiAckTimeoutMS int,
 	) error {
 		if linkName != defaultLink || transportName != dataTransport || carrierName != carrierJazz ||
 			roomURL != "any" || clientID != "client" || localAddr != "127.0.0.1:1080" ||
@@ -230,6 +234,10 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 		videoTileRS int,
 		vp8FPS int,
 		vp8BatchSize int,
+		seiFPS int,
+		seiBatchSize int,
+		seiFragmentSize int,
+		seiAckTimeoutMS int,
 	) error {
 		if transportName != defaultTransport || roomURL != "https://telemost.yandex.ru/j/room" ||
 			localAddr != "127.0.0.1:1081" || socksUser != "u" || socksPass != "p" {
@@ -267,6 +275,10 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 		videoTileRS int,
 		vp8FPS int,
 		vp8BatchSize int,
+		seiFPS int,
+		seiBatchSize int,
+		seiFragmentSize int,
+		seiAckTimeoutMS int,
 	) error {
 		if transportName != dataTransport || vp8FPS != 1 || vp8BatchSize != 64 {
 			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", transportName, vp8FPS, vp8BatchSize)
@@ -308,6 +320,10 @@ func TestCheckTimeoutAndRunError(t *testing.T) {
 		videoTileRS int,
 		vp8FPS int,
 		vp8BatchSize int,
+		seiFPS int,
+		seiBatchSize int,
+		seiFragmentSize int,
+		seiAckTimeoutMS int,
 	) error {
 		<-ctx.Done()
 		return nil
@@ -329,6 +345,10 @@ func TestCheckTimeoutAndRunError(t *testing.T) {
 		int,
 		string,
 		string,
+		int,
+		int,
+		int,
+		int,
 		int,
 		int,
 		int,

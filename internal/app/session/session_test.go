@@ -245,6 +245,60 @@ func TestValidate(t *testing.T) {
 			}(),
 		},
 		{
+			name: "seichannel requires fps",
+			cfg: func() Config {
+				cfg := base
+				cfg.Transport = "seichannel"
+				return cfg
+			}(),
+			want: ErrSEIFPSRequired,
+		},
+		{
+			name: "seichannel requires batch size",
+			cfg: func() Config {
+				cfg := base
+				cfg.Transport = "seichannel"
+				cfg.SEIFPS = 20
+				return cfg
+			}(),
+			want: ErrSEIBatchSizeRequired,
+		},
+		{
+			name: "seichannel requires fragment size",
+			cfg: func() Config {
+				cfg := base
+				cfg.Transport = "seichannel"
+				cfg.SEIFPS = 20
+				cfg.SEIBatchSize = 1
+				return cfg
+			}(),
+			want: ErrSEIFragmentSizeRequired,
+		},
+		{
+			name: "seichannel requires ack timeout",
+			cfg: func() Config {
+				cfg := base
+				cfg.Transport = "seichannel"
+				cfg.SEIFPS = 20
+				cfg.SEIBatchSize = 1
+				cfg.SEIFragmentSize = 900
+				return cfg
+			}(),
+			want: ErrSEIAckTimeoutRequired,
+		},
+		{
+			name: "seichannel valid",
+			cfg: func() Config {
+				cfg := base
+				cfg.Transport = "seichannel"
+				cfg.SEIFPS = 20
+				cfg.SEIBatchSize = 1
+				cfg.SEIFragmentSize = 900
+				cfg.SEIAckTimeoutMS = 3000
+				return cfg
+			}(),
+		},
+		{
 			name: "cnc requires socks host",
 			cfg: func() Config {
 				cfg := base
