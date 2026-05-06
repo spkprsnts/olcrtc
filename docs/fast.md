@@ -80,10 +80,10 @@ Enter choice [1-4, default: 1]:
 ```
 
 Рекомендации:
-- **datachannel** - самый быстрый (~6 МБ/с), работает везде кроме telemost
+- **datachannel** - работает везде помимо telemost, самый быстрый (~6 МБ/с)
 - **vp8channel** - работает везде включая telemost, вводи FPS=60, batch=64
-- **seichannel** - для wbstream/sber, всё по умолчанию
-- **videochannel** - медленный (~200 КБ/с), только в крайнем случае
+- **seichannel** - работает везде помимо telemost, вводи всё по умолчанию (FPS=20, batch=1, frag=900, ack-ms=3000)
+- **videochannel** - работает везде включая telemost, медленный (~200 КБ/с), только в крайнем случае
 
 ### Room ID
 
@@ -129,6 +129,17 @@ VP8 batch size (frames per tick) [default: 1]: 64
 
 Введи `60` и `64` - это оптимальные значения.
 
+### Параметры транспорта (только для seichannel)
+
+```
+SEI FPS [default: 20]: 60
+SEI batch size (frames per tick) [default: 1]: 64
+SEI fragment size in bytes [default: 900]: 900
+SEI ACK timeout in milliseconds [default: 3000]: 2000
+```
+
+Нажми Enter для всех - значения по умолчанию оптимальны.
+
 ### Результат
 
 После запуска скрипт выведет:
@@ -137,11 +148,11 @@ VP8 batch size (frames per tick) [default: 1]: 64
 [+] Server started successfully!
 
 Container name: olcrtc-server
-Carrier:        telemost
-Transport:      vp8channel
-Room ID:        75587919855134
+Carrier:        Carrier
+Transport:      Transport
+Room ID:        Room ID
 Client ID:      default
-Encryption key: 4fc9ab159c0268a12766be00c0a85138df5905f72c5eb5780c380507ebe0174d
+Encryption key: Encryption key
 ```
 
 **Сохрани Room ID, Client ID и Encryption key** - они нужны для клиента.
@@ -171,7 +182,7 @@ Enter Client ID [default: default]: default
 Когда спросит ключ:
 
 ```
-Enter Encryption Key (hex): 4fc9ab159c0268a12766be00c0a85138df5905f72c5eb5780c380507ebe0174d
+Enter Encryption Key (hex): Encryption key
 ```
 
 Вставь ключ с сервера.
@@ -241,7 +252,3 @@ podman stop olcrtc-client
 **`podman: command not found`** - установи podman (см. начало документа).
 
 **`git: command not found`** - установи git.
-
-**Контейнер запустился но curl возвращает домашний IP** - подожди 10-15 секунд после старта, соединение устанавливается не мгновенно.
-
-**Ключ уже есть в `~/.olcrtc_key`** - скрипт не генерирует новый, использует старый. Если хочешь новый - удали файл: `rm ~/.olcrtc_key`.

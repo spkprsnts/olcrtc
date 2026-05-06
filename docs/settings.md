@@ -11,7 +11,7 @@
 | seichannel | ✗ | ✓ | ✓ |
 | videochannel | ✓ | ✓ | ✓ |
 
-Скорость по убыванию: datachannel (~6 МБ/с) > vp8channel > seichannel > videochannel (~200 КБ/с)
+Скорость по убыванию: datachannel > vp8channel > seichannel > videochannel
 
 ---
 
@@ -27,15 +27,15 @@
 | `-key` | Ключ шифрования hex 64 символа. Генерация: `openssl rand -hex 32` |
 | `-link` | Всегда `direct` |
 | `-data` | Всегда `data` |
+| `-dns` | DNS-сервер, например `1.1.1.1:53` |
 
 ---
 
 ## Необязательные флаги
 
-| Флаг | Описание | По умолчанию |
-|------|----------|:------------:|
-| `-dns` | DNS-сервер | `1.1.1.1:53` |
-| `--debug` | Подробные логи соединений | выкл |
+| Флаг | Описание |
+|------|----------|
+| `--debug` | Подробные логи соединений |
 
 ---
 
@@ -89,13 +89,41 @@
 
 ---
 
-## seichannel / datachannel
+## seichannel
+
+**Рекомендуется: `-fps 60 -batch 64 -frag 900 -ack-ms 2000`**
+
+| Флаг | Описание | По умолчанию |
+|------|----------|:------------:|
+| `-fps` | FPS H264 потока | `60` |
+| `-batch` | Кадров за тик | `64` |
+| `-frag` | Размер фрагмента в байтах | `900` |
+| `-ack-ms` | Таймаут ACK в миллисекундах | `2000` |
+
+---
+
+## datachannel
 
 Дополнительных флагов нет - всё по умолчанию.
 
 ---
 
 ## Готовые команды
+
+### telemost + seichannel
+
+```sh
+# сервер
+./olcrtc -mode srv -carrier telemost -transport seichannel \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
+  -fps 60 -batch 64 -frag 900 -ack-ms 2000
+
+# клиент
+./olcrtc -mode cnc -carrier telemost -transport seichannel \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
+  -socks-host 127.0.0.1 -socks-port 1080 \
+  -fps 60 -batch 64 -frag 900 -ack-ms 2000
+```
 
 ### telemost + vp8channel
 

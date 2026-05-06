@@ -128,7 +128,7 @@ build/olcrtc-darwin-amd64
 Делается один раз на сервере. Ключ должен совпадать на сервере и клиенте.
 
 ```sh
-openssl rand -hex 32
+openssl rand -hex 32 
 # d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799
 ```
 
@@ -141,7 +141,7 @@ openssl rand -hex 32
 Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение.
 
 ```sh
-CLIENT_ID=my-phone
+CLIENT_ID=default
 ```
 
 Подойдёт любая короткая строка без пробелов: `home-laptop`, `android-01`, `pc`.
@@ -171,12 +171,12 @@ CLIENT_ID=my-phone
 
 Для telemost `-id` - это ID комнаты телемоста. Создай комнату через [telemost.yandex.ru](https://telemost.yandex.ru/) и вставь ID из ссылки.
 
-### jazz + datachannel (максимальная скорость, не работает в telemost)
+### wbstream + datachannel (максимальная скорость, не работает в telemost)
 
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode srv \
-  -carrier jazz \
+  -carrier wbstream \
   -transport datachannel \
   -id any \
   -client-id "$CLIENT_ID" \
@@ -189,24 +189,40 @@ CLIENT_ID=my-phone
 При `-id any` сервер создаст комнату автоматически и напишет ID в логах:
 
 ```
-Jazz room created: abc123xyz
+Wbstream room created: abc123xyz
 ```
 
 Этот ID нужно передать клиенту.
 
-### wbstream + seichannel
+### telemost + seichannel
+
+```sh
+./build/olcrtc-linux-amd64 \
+  -mode srv \
+  -carrier telemost \
+  -transport seichannel \
+  -id 75587912855134 \
+  -client-id "$CLIENT_ID" \
+  -key <hex-key> \
+  -link direct \
+  -dns 1.1.1.1:53 \
+  -data data \
+  -fps 20 -batch 1 -frag 900 -ack-ms 3000
+```
+
+### wbstream + datachannel
 
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode srv \
   -carrier wbstream \
-  -transport seichannel \
+  -transport datachannel \
   -id any \
   -client-id "$CLIENT_ID" \
   -key <hex-key> \
   -link direct \
   -dns 1.1.1.1:53 \
-  -data data
+  -data data \
 ```
 
 ### Добавить отладку
@@ -246,12 +262,30 @@ Jazz room created: abc123xyz
   -vp8-batch 64
 ```
 
-### jazz + datachannel
+### telemost + seichannel
 
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode cnc \
-  -carrier jazz \
+  -carrier telemost \
+  -transport seichannel \
+  -id 75587912855134 \
+  -client-id "$CLIENT_ID" \
+  -key <hex-key> \
+  -link direct \
+  -dns 1.1.1.1:53 \
+  -data data \
+  -socks-host 127.0.0.1 \
+  -socks-port 1080 \
+  -fps 20 -batch 1 -frag 900 -ack-ms 3000
+```
+
+### wbstream + datachannel
+
+```sh
+./build/olcrtc-linux-amd64 \
+  -mode cnc \
+  -carrier wbstream \
   -transport datachannel \
   -id abc123xyz \
   -client-id "$CLIENT_ID" \
@@ -277,7 +311,7 @@ SOCKS5 server listening on 127.0.0.1:1080
 curl --socks5-hostname 127.0.0.1:1080 https://icanhazip.com
 ```
 
-Должен вернуть IP сервера, а не домашний.
+Должен вернуть IP сервера.
 
 Или выставить переменную чтобы весь трафик шёл через прокси:
 
@@ -300,15 +334,3 @@ mage lint     # запустить линтер
 mage podman   # собрать образ через podman
 mage docker   # собрать образ через docker
 ```
-
----
-
-## Частые проблемы
-
-**`mage: command not found`** - добавь `~/go/bin` в PATH (см. шаг 3).
-
-**`go.mod:3: invalid go version`** - версия go слишком старая, нужна 1.26+ (см. шаг 2).
-
-**`submodule path ... No such file or directory`** - забыл `--recurse-submodules`. Исправить: `git submodule update --init --recursive`.
-
-**curl возвращает домашний IP** - подожди 10-15 секунд, соединение устанавливается не мгновенно. Смотри логи с `--debug`.
