@@ -33,6 +33,8 @@ Or wait for the release or at least a release
 
 [Client URI format](docs/uri.md)
 
+[Client subscription format](docs/sub.md)
+
 
 
 ## Build
