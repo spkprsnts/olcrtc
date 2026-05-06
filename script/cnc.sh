@@ -222,6 +222,25 @@ if [ "$TRANSPORT" = "vp8channel" ]; then
     TRANSPORT_ARGS+=(-vp8-fps "$VP8_FPS" -vp8-batch "$VP8_BATCH")
 fi
 
+if [ "$TRANSPORT" = "seichannel" ]; then
+    echo ""
+    echo "--- SEIchannel settings ---"
+
+    read -p "SEI FPS [default: 20]: " SEIFPS_INPUT
+    SEI_FPS=${SEIFPS_INPUT:-20}
+
+    read -p "SEI batch size (frames per tick) [default: 1]: " SEIBATCH_INPUT
+    SEI_BATCH=${SEIBATCH_INPUT:-1}
+
+    read -p "SEI fragment size in bytes [default: 900]: " SEIFRAG_INPUT
+    SEI_FRAG=${SEIFRAG_INPUT:-900}
+
+    read -p "SEI ACK timeout in milliseconds [default: 3000]: " SEIACK_INPUT
+    SEI_ACK=${SEIACK_INPUT:-3000}
+
+    TRANSPORT_ARGS+=(-fps "$SEI_FPS" -batch "$SEI_BATCH" -frag "$SEI_FRAG" -ack-ms "$SEI_ACK")
+fi
+
 echo ""
 echo "[*] Stopping old instance..."
 podman stop $CONTAINER_NAME 2>/dev/null || true
