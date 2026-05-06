@@ -1,6 +1,7 @@
 package mobile
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strings"
@@ -39,12 +40,15 @@ func resetMobileGlobals(t *testing.T) {
 	done = nil
 	ready = nil
 	errRun = nil
+	runClientWithReady = clientRunWithReady
 	defaults = mobileConfig{}
 	defaultsSet = sync.Once{}
 	mu.Unlock()
 	protect.Protector = nil
 	logger.SetVerbose(false)
 }
+
+var clientRunWithReady = runClientWithReady
 
 func TestProtectorAndLogging(t *testing.T) {
 	resetMobileGlobals(t)
@@ -149,6 +153,192 @@ func TestStartValidation(t *testing.T) {
 		t.Fatalf("startWithConfig(running) = %v", err)
 	}
 	resetMobileGlobals(t)
+}
+
+func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
+	resetMobileGlobals(t)
+	t.Cleanup(func() {
+		resetMobileGlobals(t)
+	})
+
+	runClientWithReady = func(
+		ctx context.Context,
+		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		localAddr string,
+		dnsServer, socksUser, socksPass string,
+		onReady func(),
+		videoWidth int,
+		videoHeight int,
+		videoFPS int,
+		videoBitrate string,
+		videoHW string,
+		videoQRSize int,
+		videoQRRecovery string,
+		videoCodec string,
+		videoTileModule int,
+		videoTileRS int,
+		vp8FPS int,
+		vp8BatchSize int,
+	) error {
+		if linkName != defaultLink || transportName != dataTransport || carrierName != carrierJazz ||
+			roomURL != "any" || clientID != "client" || localAddr != "127.0.0.1:1080" ||
+			dnsServer != defaultDNSServer || vp8FPS != 60 || vp8BatchSize != 8 {
+			t.Fatalf("RunWithReady args mismatch: link=%q transport=%q carrier=%q room=%q client=%q local=%q dns=%q vp8=%d/%d",
+				linkName, transportName, carrierName, roomURL, clientID, localAddr, dnsServer, vp8FPS, vp8BatchSize)
+		}
+		onReady()
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	if err := StartWithTransport(carrierJazz, "dc", "", "client", "key", 1080, "", ""); err != nil {
+		t.Fatalf("StartWithTransport() error = %v", err)
+	}
+	if !IsRunning() {
+		t.Fatal("IsRunning() = false, want true")
+	}
+	if err := WaitReady(100); err != nil {
+		t.Fatalf("WaitReady() error = %v", err)
+	}
+	Stop()
+	if IsRunning() {
+		t.Fatal("IsRunning() = true after Stop")
+	}
+}
+
+func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
+	resetMobileGlobals(t)
+	t.Cleanup(func() {
+		resetMobileGlobals(t)
+	})
+
+	runClientWithReady = func(
+		ctx context.Context,
+		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		localAddr string,
+		dnsServer, socksUser, socksPass string,
+		onReady func(),
+		videoWidth int,
+		videoHeight int,
+		videoFPS int,
+		videoBitrate string,
+		videoHW string,
+		videoQRSize int,
+		videoQRRecovery string,
+		videoCodec string,
+		videoTileModule int,
+		videoTileRS int,
+		vp8FPS int,
+		vp8BatchSize int,
+	) error {
+		if transportName != defaultTransport || roomURL != "https://telemost.yandex.ru/j/room" ||
+			localAddr != "127.0.0.1:1081" || socksUser != "u" || socksPass != "p" {
+			t.Fatalf("Start args mismatch: transport=%q room=%q local=%q user/pass=%q/%q",
+				transportName, roomURL, localAddr, socksUser, socksPass)
+		}
+		onReady()
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	if err := Start("telemost", "room", "client", "key", 1081, "u", "p"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := WaitReady(100); err != nil {
+		t.Fatalf("WaitReady() error = %v", err)
+	}
+	Stop()
+
+	runClientWithReady = func(
+		ctx context.Context,
+		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		localAddr string,
+		dnsServer, socksUser, socksPass string,
+		onReady func(),
+		videoWidth int,
+		videoHeight int,
+		videoFPS int,
+		videoBitrate string,
+		videoHW string,
+		videoQRSize int,
+		videoQRRecovery string,
+		videoCodec string,
+		videoTileModule int,
+		videoTileRS int,
+		vp8FPS int,
+		vp8BatchSize int,
+	) error {
+		if transportName != dataTransport || vp8FPS != 1 || vp8BatchSize != 64 {
+			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", transportName, vp8FPS, vp8BatchSize)
+		}
+		onReady()
+		<-ctx.Done()
+		return nil
+	}
+	elapsed, err := Check("jazz", "dc", "", "client", "key", 1082, 100, -1, 999)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if elapsed < 0 {
+		t.Fatalf("Check() elapsed = %d", elapsed)
+	}
+}
+
+func TestCheckTimeoutAndRunError(t *testing.T) {
+	resetMobileGlobals(t)
+	t.Cleanup(func() {
+		resetMobileGlobals(t)
+	})
+
+	runClientWithReady = func(
+		ctx context.Context,
+		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		localAddr string,
+		dnsServer, socksUser, socksPass string,
+		onReady func(),
+		videoWidth int,
+		videoHeight int,
+		videoFPS int,
+		videoBitrate string,
+		videoHW string,
+		videoQRSize int,
+		videoQRRecovery string,
+		videoCodec string,
+		videoTileModule int,
+		videoTileRS int,
+		vp8FPS int,
+		vp8BatchSize int,
+	) error {
+		<-ctx.Done()
+		return nil
+	}
+	if _, err := Check("telemost", defaultTransport, "room", "client", "key", 1083, 1, 30, 1); !errors.Is(err, errStartTimedOut) {
+		t.Fatalf("Check(timeout) error = %v, want %v", err, errStartTimedOut)
+	}
+
+	want := errors.New("check failed")
+	runClientWithReady = func(
+		context.Context,
+		string, string, string, string, string, string,
+		string,
+		string, string, string,
+		func(),
+		int, int, int,
+		string,
+		string,
+		int,
+		string,
+		string,
+		int,
+		int,
+		int,
+		int,
+	) error {
+		return want
+	}
+	if _, err := Check("telemost", defaultTransport, "room", "client", "key", 1084, 100, 30, 1); !errors.Is(err, want) {
+		t.Fatalf("Check(run error) = %v, want %v", err, want)
+	}
 }
 
 func TestWaitReadyStatesAndStop(t *testing.T) {

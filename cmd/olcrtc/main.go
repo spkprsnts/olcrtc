@@ -6,14 +6,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
-	lksdk "github.com/livekit/server-sdk-go/v2"
 	protoLogger "github.com/livekit/protocol/logger"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
@@ -22,27 +23,30 @@ import (
 // ErrDataDirRequired is returned when no data directory is specified.
 var ErrDataDirRequired = errors.New("data directory required (use -data data)")
 
+//nolint:gochecknoglobals // Tests replace the long-running session runner with a bounded function.
+var runSession = session.Run
+
 type config struct {
-	mode           string
-	link           string
-	transport      string
-	carrier        string
-	roomID         string
-	clientID       string
-	provider       string
-	socksPort      int
-	socksHost      string
-	keyHex         string
-	debug          bool
-	dataDir        string
-	dnsServer      string
-	socksProxyAddr string
-	socksProxyPort int
-	videoWidth     int
-	videoHeight    int
-	videoFPS       int
-	videoBitrate   string
-	videoHW        string
+	mode            string
+	link            string
+	transport       string
+	carrier         string
+	roomID          string
+	clientID        string
+	provider        string
+	socksPort       int
+	socksHost       string
+	keyHex          string
+	debug           bool
+	dataDir         string
+	dnsServer       string
+	socksProxyAddr  string
+	socksProxyPort  int
+	videoWidth      int
+	videoHeight     int
+	videoFPS        int
+	videoBitrate    string
+	videoHW         string
 	videoQRSize     int
 	videoQRRecovery string
 	videoCodec      string
@@ -60,9 +64,20 @@ func main() {
 }
 
 func run() error {
+	return runWithArgs(os.Args[1:])
+}
+
+func runWithArgs(args []string) error {
 	session.RegisterDefaults()
 
-	cfg := parseFlags()
+	cfg, err := parseFlagsFrom(args, flag.ExitOnError)
+	if err != nil {
+		return err
+	}
+	return runWithConfig(cfg)
+}
+
+func runWithConfig(cfg config) error {
 	configureLogging(cfg.debug)
 
 	if err := session.Validate(toSessionConfig(cfg)); err != nil {
@@ -90,7 +105,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- session.Run(ctx, toSessionConfig(cfg))
+		errCh <- runSession(ctx, toSessionConfig(cfg))
 	}()
 
 	select {
@@ -104,41 +119,49 @@ func run() error {
 }
 
 func parseFlags() config {
-	cfg := config{}
-
-	flag.StringVar(&cfg.mode, "mode", "", "Mode: srv or cnc")
-	flag.StringVar(&cfg.link, "link", "", "Link: direct (p2p connection type)")
-	flag.StringVar(&cfg.transport, "transport", "", "Transport: datachannel, videochannel, seichannel")
-	flag.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wbstream")
-	flag.StringVar(&cfg.roomID, "id", "", "Room ID")
-	flag.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
-	flag.StringVar(&cfg.provider, "provider", "", "Deprecated alias for -carrier")
-	flag.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
-	flag.StringVar(&cfg.socksHost, "socks-host", "", "SOCKS5 listen host (client only)")
-	flag.StringVar(&cfg.keyHex, "key", "", "Shared encryption key (hex)")
-	flag.BoolVar(&cfg.debug, "debug", false, "Enable verbose logging")
-	flag.StringVar(&cfg.dataDir, "data", "", "Path to data directory")
-	flag.StringVar(&cfg.dnsServer, "dns", "", "DNS server (e.g. 1.1.1.1:53)")
-	flag.StringVar(&cfg.socksProxyAddr, "socks-proxy", "", "SOCKS5 proxy address (server only)")
-	flag.IntVar(&cfg.socksProxyPort, "socks-proxy-port", 0, "SOCKS5 proxy port (server only)")
-	flag.IntVar(&cfg.videoWidth, "video-w", 0, "Video logical width (videochannel only)")
-	flag.IntVar(&cfg.videoHeight, "video-h", 0, "Video logical height (videochannel only)")
-	flag.IntVar(&cfg.videoFPS, "video-fps", 0, "Video frames per second (videochannel only)")
-	flag.StringVar(&cfg.videoBitrate, "video-bitrate", "", "Video bitrate (videochannel only)")
-	flag.StringVar(&cfg.videoHW, "video-hw", "", "Hardware acceleration (none, nvenc)")
-	flag.IntVar(&cfg.videoQRSize, "video-qr-size", 0, "Video QR code fragment size (videochannel only)")
-	flag.StringVar(&cfg.videoQRRecovery, "video-qr-recovery", "low",
-		"QR error correction: low (7%), medium (15%), high (25%), highest (30%)")
-	flag.StringVar(&cfg.videoCodec, "video-codec", "qrcode", "Visual codec: qrcode or tile")
-	flag.IntVar(&cfg.videoTileModule, "video-tile-module", 0,
-		"Tile module size in pixels 1..270 (videochannel tile only, default 4)")
-	flag.IntVar(&cfg.videoTileRS, "video-tile-rs", 0,
-		"Tile Reed-Solomon parity percent 0..200 (videochannel tile only, default 20)")
-	flag.IntVar(&cfg.vp8FPS, "vp8-fps", 0, "VP8 frames per second (vp8channel only, default 25)")
-	flag.IntVar(&cfg.vp8BatchSize, "vp8-batch", 0, "VP8 frames per tick (vp8channel only, default 1)")
-	flag.Parse()
-
+	cfg, _ := parseFlagsFrom(os.Args[1:], flag.ExitOnError)
 	return cfg
+}
+
+func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, error) {
+	cfg := config{}
+	fs := flag.NewFlagSet("olcrtc", errorHandling)
+	if errorHandling == flag.ContinueOnError {
+		fs.SetOutput(io.Discard)
+	}
+
+	fs.StringVar(&cfg.mode, "mode", "", "Mode: srv or cnc")
+	fs.StringVar(&cfg.link, "link", "", "Link: direct (p2p connection type)")
+	fs.StringVar(&cfg.transport, "transport", "", "Transport: datachannel, videochannel, seichannel")
+	fs.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wbstream")
+	fs.StringVar(&cfg.roomID, "id", "", "Room ID")
+	fs.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
+	fs.StringVar(&cfg.provider, "provider", "", "Deprecated alias for -carrier")
+	fs.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
+	fs.StringVar(&cfg.socksHost, "socks-host", "", "SOCKS5 listen host (client only)")
+	fs.StringVar(&cfg.keyHex, "key", "", "Shared encryption key (hex)")
+	fs.BoolVar(&cfg.debug, "debug", false, "Enable verbose logging")
+	fs.StringVar(&cfg.dataDir, "data", "", "Path to data directory")
+	fs.StringVar(&cfg.dnsServer, "dns", "", "DNS server (e.g. 1.1.1.1:53)")
+	fs.StringVar(&cfg.socksProxyAddr, "socks-proxy", "", "SOCKS5 proxy address (server only)")
+	fs.IntVar(&cfg.socksProxyPort, "socks-proxy-port", 0, "SOCKS5 proxy port (server only)")
+	fs.IntVar(&cfg.videoWidth, "video-w", 0, "Video logical width (videochannel only)")
+	fs.IntVar(&cfg.videoHeight, "video-h", 0, "Video logical height (videochannel only)")
+	fs.IntVar(&cfg.videoFPS, "video-fps", 0, "Video frames per second (videochannel only)")
+	fs.StringVar(&cfg.videoBitrate, "video-bitrate", "", "Video bitrate (videochannel only)")
+	fs.StringVar(&cfg.videoHW, "video-hw", "", "Hardware acceleration (none, nvenc)")
+	fs.IntVar(&cfg.videoQRSize, "video-qr-size", 0, "Video QR code fragment size (videochannel only)")
+	fs.StringVar(&cfg.videoQRRecovery, "video-qr-recovery", "low",
+		"QR error correction: low (7%), medium (15%), high (25%), highest (30%)")
+	fs.StringVar(&cfg.videoCodec, "video-codec", "qrcode", "Visual codec: qrcode or tile")
+	fs.IntVar(&cfg.videoTileModule, "video-tile-module", 0,
+		"Tile module size in pixels 1..270 (videochannel tile only, default 4)")
+	fs.IntVar(&cfg.videoTileRS, "video-tile-rs", 0,
+		"Tile Reed-Solomon parity percent 0..200 (videochannel tile only, default 20)")
+	fs.IntVar(&cfg.vp8FPS, "vp8-fps", 0, "VP8 frames per second (vp8channel only, default 25)")
+	fs.IntVar(&cfg.vp8BatchSize, "vp8-batch", 0, "VP8 frames per tick (vp8channel only, default 1)")
+
+	return cfg, fs.Parse(args)
 }
 
 func configureLogging(debug bool) {

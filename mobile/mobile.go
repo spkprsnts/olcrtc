@@ -52,14 +52,15 @@ const (
 
 //nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
 var (
-	mu          sync.Mutex
-	defaults    mobileConfig
-	defaultsSet sync.Once
-	registerSet sync.Once
-	cancel      context.CancelFunc
-	done        chan struct{}
-	ready       chan struct{}
-	errRun      error
+	mu                 sync.Mutex
+	defaults           mobileConfig
+	defaultsSet        sync.Once
+	registerSet        sync.Once
+	runClientWithReady = client.RunWithReady
+	cancel             context.CancelFunc
+	done               chan struct{}
+	ready              chan struct{}
+	errRun             error
 )
 
 type mobileConfig struct {
@@ -200,7 +201,7 @@ func Check(
 	startedAt := time.Now()
 
 	go func() {
-		doneCh <- client.RunWithReady(
+		doneCh <- runClientWithReady(
 			ctx,
 			defaultLink,
 			transportName,
@@ -288,7 +289,7 @@ func startWithConfig(
 	go func() {
 		defer cancelFunc()
 
-		err := client.RunWithReady(
+		err := runClientWithReady(
 			ctx,
 			cfg.link,
 			cfg.transport,

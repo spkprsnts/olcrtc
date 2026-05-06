@@ -76,6 +76,12 @@ func TestCodecSpecsAndArgs(t *testing.T) {
 	if got := resolveEncoderCodec(vp8CodecSpec(), "none"); got != "libvpx" {
 		t.Fatalf("resolveEncoderCodec(vp8,none) = %q", got)
 	}
+	if got := resolveEncoderCodec(vp9CodecSpec(), "nvenc"); got != "vp9_nvenc" {
+		t.Fatalf("resolveEncoderCodec(vp9,nvenc) = %q", got)
+	}
+	if got := resolveEncoderCodec(codecSpec{mimeType: webrtc.MimeTypeAV1, encoder: "libaom-av1"}, "nvenc"); got != "av1_nvenc" {
+		t.Fatalf("resolveEncoderCodec(av1,nvenc) = %q", got)
+	}
 
 	args := buildEncoderArgs(vp8CodecSpec(), "vp8_nvenc", 320, 240, 30, "1M")
 	for _, want := range []string{"-video_size", "320x240", "-framerate", "30", "vp8_nvenc", "-b:v", "1M", "ivf"} {
@@ -86,6 +92,29 @@ func TestCodecSpecsAndArgs(t *testing.T) {
 	h264Args := buildEncoderArgs(h264CodecSpec(), "libx264", 320, 240, 30, "1M")
 	if h264Args[len(h264Args)-2] != "h264" {
 		t.Fatalf("h264 encoder args = %v", h264Args)
+	}
+
+	if got := resolveDecoderName(h264CodecSpec(), "nvenc"); got != "h264_cuvid" {
+		t.Fatalf("resolveDecoderName(h264,nvenc) = %q", got)
+	}
+	if got := resolveDecoderName(vp8CodecSpec(), "nvenc"); got != "vp8_cuvid" {
+		t.Fatalf("resolveDecoderName(vp8,nvenc) = %q", got)
+	}
+	if got := resolveDecoderName(vp9CodecSpec(), "nvenc"); got != "vp9_cuvid" {
+		t.Fatalf("resolveDecoderName(vp9,nvenc) = %q", got)
+	}
+	if got := resolveDecoderName(codecSpec{mimeType: "video/custom"}, "none"); got != "custom" {
+		t.Fatalf("resolveDecoderName(custom,none) = %q", got)
+	}
+	decArgs := buildDecoderArgs(vp8CodecSpec(), "vp8", 320, 240, "gray")
+	for _, want := range []string{"-f", "ivf", "-vcodec", "vp8", "scale=320:240:flags=neighbor,format=gray", "rawvideo"} {
+		if !slices.Contains(decArgs, want) {
+			t.Fatalf("buildDecoderArgs(vp8) = %v, missing %q", decArgs, want)
+		}
+	}
+	h264DecArgs := buildDecoderArgs(h264CodecSpec(), "h264", 320, 240, "gray")
+	if h264DecArgs[5] != "h264" {
+		t.Fatalf("buildDecoderArgs(h264) = %v", h264DecArgs)
 	}
 }
 
@@ -104,6 +133,12 @@ func (w *shortWriter) Write(p []byte) (int, error) {
 type errWriter struct{}
 
 func (w errWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+type bufferWriteCloser struct {
+	bytes.Buffer
+}
+
+func (w *bufferWriteCloser) Close() error { return nil }
 
 func TestIVFWritersAndWithStderr(t *testing.T) {
 	var buf bytes.Buffer
@@ -135,5 +170,85 @@ func TestIVFWritersAndWithStderr(t *testing.T) {
 	}
 	if got := withStderr(nil, bytes.NewBufferString("details")); got != nil {
 		t.Fatalf("withStderr(nil) = %v", got)
+	}
+}
+
+func TestFFmpegProcessErrAndFrameValidation(t *testing.T) {
+	enc := &ffmpegEncoder{
+		stderr:    bytes.NewBufferString("encoder failed"),
+		frames:    make(chan []byte, 1),
+		frameSize: 4,
+	}
+	if _, err := enc.EncodeFrame([]byte("bad")); !errors.Is(err, ErrUnexpectedFrameSize) {
+		t.Fatalf("EncodeFrame(short) error = %v, want %v", err, ErrUnexpectedFrameSize)
+	}
+	enc.setErr(errors.New("boom"))
+	if _, err := enc.EncodeFrame([]byte("good")); err == nil || !strings.Contains(err.Error(), "encoder failed") {
+		t.Fatalf("EncodeFrame(processErr) error = %v", err)
+	}
+
+	dec := &ffmpegDecoder{stderr: bytes.NewBufferString("decoder failed")}
+	dec.setErr(errors.New("boom"))
+	if err := dec.PushSample([]byte("sample")); err == nil || !strings.Contains(err.Error(), "decoder failed") {
+		t.Fatalf("PushSample(processErr) error = %v", err)
+	}
+	closed := &ffmpegDecoder{}
+	closed.closed.Store(true)
+	if err := closed.processErr(); !errors.Is(err, ErrTransportClosed) {
+		t.Fatalf("decoder processErr(closed) = %v, want %v", err, ErrTransportClosed)
+	}
+}
+
+func TestFFmpegReadersAndSampleWriters(t *testing.T) {
+	var ivf bytes.Buffer
+	if err := writeIVFHeader(&ivf, "VP80", 2, 2, 30); err != nil {
+		t.Fatalf("writeIVFHeader() error = %v", err)
+	}
+	if err := writeIVFFrame(&ivf, 1, []byte("frame")); err != nil {
+		t.Fatalf("writeIVFFrame() error = %v", err)
+	}
+	enc := &ffmpegEncoder{stderr: &bytes.Buffer{}, frames: make(chan []byte, 2)}
+	enc.readIVF(&ivf)
+	if got := <-enc.frames; !bytes.Equal(got, []byte("frame")) {
+		t.Fatalf("readIVF frame = %q", got)
+	}
+
+	enc = &ffmpegEncoder{stderr: &bytes.Buffer{}, frames: make(chan []byte, 2)}
+	enc.readRawH264(bytes.NewBufferString("h264"))
+	if got := <-enc.frames; !bytes.Equal(got, []byte("h264")) {
+		t.Fatalf("readRawH264 frame = %q", got)
+	}
+
+	dec := &ffmpegDecoder{stderr: &bytes.Buffer{}, frames: make(chan []byte, 2), frameSize: 4}
+	dec.readRawFrames(bytes.NewBufferString("aaaabbbb"))
+	if got := <-dec.frames; !bytes.Equal(got, []byte("aaaa")) {
+		t.Fatalf("readRawFrames first = %q", got)
+	}
+	if got := <-dec.frames; !bytes.Equal(got, []byte("bbbb")) {
+		t.Fatalf("readRawFrames second = %q", got)
+	}
+
+	h264In := &bufferWriteCloser{}
+	dec = &ffmpegDecoder{stdin: h264In, mimeType: webrtc.MimeTypeH264}
+	if err := dec.PushSample([]byte("sample")); err != nil {
+		t.Fatalf("PushSample(h264) error = %v", err)
+	}
+	if h264In.String() != "sample" {
+		t.Fatalf("h264 stdin = %q", h264In.String())
+	}
+
+	ivfIn := &bufferWriteCloser{}
+	dec = &ffmpegDecoder{stdin: ivfIn, mimeType: webrtc.MimeTypeVP8}
+	if err := dec.PushSample([]byte("vp8")); err != nil {
+		t.Fatalf("PushSample(vp8) error = %v", err)
+	}
+	if ivfIn.Len() != 12+len("vp8") || dec.pts != 1 {
+		t.Fatalf("ivf stdin len=%d pts=%d", ivfIn.Len(), dec.pts)
+	}
+
+	dec = &ffmpegDecoder{frames: make(chan []byte, 1)}
+	dec.frames <- []byte("ready")
+	if got, err := dec.PopFrame(); err != nil || !bytes.Equal(got, []byte("ready")) {
+		t.Fatalf("PopFrame() = %q, %v", got, err)
 	}
 }

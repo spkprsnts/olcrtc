@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,6 +57,117 @@ func TestToSessionConfigAndFirstNonEmpty(t *testing.T) {
 	}
 	if got := firstNonEmpty("", ""); got != "" {
 		t.Fatalf("firstNonEmpty(empty) = %q, want empty", got)
+	}
+}
+
+func TestParseFlagsFrom(t *testing.T) {
+	cfg, err := parseFlagsFrom([]string{
+		"-mode", "srv",
+		"-link", "direct",
+		"-transport", "vp8channel",
+		"-carrier", "telemost",
+		"-id", "room",
+		"-client-id", "client",
+		"-socks-port", "1080",
+		"-socks-host", "127.0.0.1",
+		"-key", "key",
+		"-debug",
+		"-data", "data",
+		"-dns", "9.9.9.9:53",
+		"-socks-proxy", "proxy",
+		"-socks-proxy-port", "1081",
+		"-video-w", "640",
+		"-video-h", "480",
+		"-video-fps", "30",
+		"-video-bitrate", "1M",
+		"-video-hw", "none",
+		"-video-qr-size", "128",
+		"-video-qr-recovery", "high",
+		"-video-codec", "tile",
+		"-video-tile-module", "6",
+		"-video-tile-rs", "40",
+		"-vp8-fps", "24",
+		"-vp8-batch", "3",
+	}, flag.ContinueOnError)
+	if err != nil {
+		t.Fatalf("parseFlagsFrom() error = %v", err)
+	}
+	if cfg.mode != "srv" || cfg.carrier != "telemost" || cfg.roomID != "room" ||
+		cfg.debug != true || cfg.videoCodec != "tile" || cfg.videoTileRS != 40 ||
+		cfg.vp8FPS != 24 || cfg.vp8BatchSize != 3 {
+		t.Fatalf("parseFlagsFrom() = %+v", cfg)
+	}
+
+	_, err = parseFlagsFrom([]string{"-bad"}, flag.ContinueOnError)
+	if err == nil {
+		t.Fatal("parseFlagsFrom(bad flag) error = nil")
+	}
+}
+
+func TestRunWithConfigValidationAndDataDirErrors(t *testing.T) {
+	session.RegisterDefaults()
+	cfg := config{
+		mode:       "srv",
+		link:       "direct",
+		transport:  "datachannel",
+		carrier:    "jazz",
+		clientID:   "client",
+		keyHex:     "key",
+		dnsServer:  "1.1.1.1:53",
+		videoCodec: "qrcode",
+	}
+	if err := runWithConfig(cfg); !errors.Is(err, ErrDataDirRequired) {
+		t.Fatalf("runWithConfig(no data dir) = %v, want %v", err, ErrDataDirRequired)
+	}
+
+	cfg.mode = ""
+	if err := runWithConfig(cfg); err == nil {
+		t.Fatal("runWithConfig(invalid config) error = nil")
+	}
+}
+
+func TestRunWithArgsSuccessfulSessionReturn(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "names"), []byte("A\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(names) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "surnames"), []byte("B\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(surnames) error = %v", err)
+	}
+
+	oldRunSession := runSession
+	t.Cleanup(func() {
+		runSession = oldRunSession
+	})
+	called := false
+	runSession = func(ctx context.Context, cfg session.Config) error {
+		called = true
+		if cfg.Mode != "srv" || cfg.Carrier != "jazz" || cfg.ClientID != "client" {
+			t.Fatalf("session config = %+v", cfg)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("context canceled before session returned")
+		default:
+		}
+		return nil
+	}
+
+	err := runWithArgs([]string{
+		"-mode", "srv",
+		"-link", "direct",
+		"-transport", "datachannel",
+		"-carrier", "jazz",
+		"-client-id", "client",
+		"-key", "key",
+		"-dns", "1.1.1.1:53",
+		"-data", dir,
+	})
+	if err != nil {
+		t.Fatalf("runWithArgs() error = %v", err)
+	}
+	if !called {
+		t.Fatal("runWithArgs() did not call session runner")
 	}
 }
 
