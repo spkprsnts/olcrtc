@@ -31,7 +31,7 @@ Or wait for the release or at least a release
 
 [Setting matrix](docs/settings.md)
 
-Во всех актуальных примерах запуска нужен `-client-id <id>`: значение должно совпадать на сервере и клиенте.
+[Client URI format](docs/uri.md)
 
 
 
