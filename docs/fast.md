@@ -90,10 +90,10 @@ Enter choice [1-4, default: 1]:
 ```
 
 Рекомендации:
-- **datachannel** - работает везде помимо telemost, самый быстрый (~6 МБ/с)
-- **vp8channel** - работает везде включая telemost, вводи FPS=60, batch=64
-- **seichannel** - работает везде помимо telemost, вводи всё по умолчанию (FPS=20, batch=1, frag=900, ack-ms=3000)
-- **videochannel** - работает везде включая telemost, медленный (~200 КБ/с), только в крайнем случае
+- **datachannel** - работает везде помимо telemost
+- **vp8channel** - работает везде включая telemost
+- **seichannel** - работает везде помимо telemost
+- **videochannel** - работает везде включая telemost
 
 ### Room ID
 
