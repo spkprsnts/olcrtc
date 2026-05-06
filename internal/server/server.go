@@ -107,6 +107,11 @@ func Run(
 		return err
 	}
 
+	go func() {
+		<-runCtx.Done()
+		s.shutdown()
+	}()
+
 	s.serve(runCtx)
 
 	s.shutdown()
