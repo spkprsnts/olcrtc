@@ -5,13 +5,13 @@ go 1.25.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/livekit/protocol v1.45.3
 	github.com/livekit/server-sdk-go/v2 v2.16.2
 	github.com/magefile/mage v1.17.1
 	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v4 v4.2.11
 	github.com/xtaci/kcp-go/v5 v5.6.72
 	github.com/xtaci/smux v1.5.57
-	github.com/zarazaex69/b v0.0.0-20260423064626-c0bd20863b89
 	github.com/zarazaex69/gr v0.0.0-20260430043628-45b595f4fef0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mobile v0.0.0-20260410095206-2cfb76559b7b
@@ -43,7 +43,6 @@ require (
 	github.com/lithammer/shortuuid/v4 v4.2.0 // indirect
 	github.com/livekit/mageutil v0.0.0-20250511045019-0f1ff63f7731 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20251128105421-19c7a7b81c22 // indirect
-	github.com/livekit/protocol v1.45.3 // indirect
 	github.com/livekit/psrpc v0.7.1 // indirect
 	github.com/makiuchi-d/gozxing v0.1.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
