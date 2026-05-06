@@ -53,10 +53,6 @@ func Cross() error {
 		{"freebsd", "arm64"},
 		{"openbsd", "amd64"},
 		{"openbsd", "arm64"},
-		{"android", "arm64"},
-		{"android", "arm"},
-		{"android", "amd64"},
-		{"android", "386"},
 	}
 
 	for _, t := range targets {
