@@ -359,10 +359,10 @@ func (c *Client) tunnel(conn net.Conn, sess *smux.Session, targetAddr string, ta
 
 func (c *Client) sendConnectRequest(stream *smux.Stream, targetAddr string, targetPort int) error {
 	connectReq, err := json.Marshal(map[string]any{
-		"cmd":       "connect",
-		"client_id": c.clientID,
-		"addr":      targetAddr,
-		"port":      targetPort,
+		"cmd":      "connect",
+		"clientId": c.clientID,
+		"addr":     targetAddr,
+		"port":     targetPort,
 	})
 	if err != nil {
 		return fmt.Errorf("sid=%d marshal connect req: %w", stream.ID(), err)

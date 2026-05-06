@@ -676,7 +676,7 @@ func (p *Peer) sendSetSlots() error {
 	// generous number of slots so each subscriber can receive every active
 	// publisher in the room.
 	slots := make([]map[string]int, 0, 8)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		slots = append(slots, map[string]int{"width": 1280, "height": 720})
 	}
 
