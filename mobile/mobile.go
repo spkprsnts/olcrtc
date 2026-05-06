@@ -47,6 +47,7 @@ const (
 	dataTransport    = "datachannel"
 	defaultDNSServer = "1.1.1.1:53"
 	carrierWBStream  = "wbstream"
+	carrierJazz      = "jazz"
 )
 
 //nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
@@ -54,6 +55,7 @@ var (
 	mu          sync.Mutex
 	defaults    mobileConfig
 	defaultsSet sync.Once
+	registerSet sync.Once
 	cancel      context.CancelFunc
 	done        chan struct{}
 	ready       chan struct{}
@@ -123,8 +125,8 @@ func SetVP8Options(fps, batchSize int) {
 	mu.Lock()
 	defer mu.Unlock()
 	ensureDefaultConfigLocked()
-	defaults.vp8FPS = clamp(fps, 1, 120)
-	defaults.vp8BatchSize = clamp(batchSize, 1, 64)
+	defaults.vp8FPS = clamp(fps, 120)
+	defaults.vp8BatchSize = clamp(batchSize, 64)
 }
 
 // SetDebug enables or disables verbose logging.
@@ -169,6 +171,88 @@ func StartWithTransport(
 	return startWithConfig(carrierName, transportName, roomID, clientID, keyHex, socksPort, socksUser, socksPass, cfg)
 }
 
+// Check starts an isolated short-lived client and returns elapsed milliseconds once ready.
+// It does not use the singleton Start/Stop runtime, so callers may run checks in parallel.
+func Check(
+	carrierName, transportName, roomID, clientID, keyHex string,
+	socksPort int,
+	timeoutMillis int,
+	vp8FPS int,
+	vp8BatchSize int,
+) (int64, error) {
+	registerDefaults()
+	carrierName = normalizeCarrier(carrierName)
+	transportName = normalizeTransport(transportName)
+	if err := validateStartArgs(carrierName, roomID, clientID, keyHex); err != nil {
+		return 0, err
+	}
+
+	if timeoutMillis <= 0 {
+		timeoutMillis = 8000
+	}
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
+	readyCh := make(chan struct{})
+	doneCh := make(chan error, 1)
+	var readyOnce sync.Once
+	startedAt := time.Now()
+
+	go func() {
+		doneCh <- client.RunWithReady(
+			ctx,
+			defaultLink,
+			transportName,
+			carrierName,
+			buildRoomURL(carrierName, roomID),
+			keyHex,
+			clientID,
+			fmt.Sprintf("127.0.0.1:%d", socksPort),
+			defaultDNSServer,
+			"",
+			"",
+			func() {
+				readyOnce.Do(func() {
+					close(readyCh)
+				})
+			},
+			0,
+			0,
+			0,
+			"",
+			"",
+			0,
+			"",
+			"",
+			0,
+			0,
+			clamp(vp8FPS, 120),
+			clamp(vp8BatchSize, 64),
+		)
+	}()
+
+	timer := time.NewTimer(time.Duration(timeoutMillis) * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case <-readyCh:
+		elapsed := time.Since(startedAt).Milliseconds()
+		cancelFunc()
+		waitForCheckDone(doneCh)
+		return elapsed, nil
+	case err := <-doneCh:
+		if err != nil {
+			return 0, err
+		}
+		return 0, errStoppedBeforeReady
+	case <-timer.C:
+		cancelFunc()
+		waitForCheckDone(doneCh)
+		return 0, errStartTimedOut
+	}
+}
+
 func startWithConfig(
 	carrierName, transportName, roomID, clientID, keyHex string,
 	socksPort int,
@@ -184,17 +268,11 @@ func startWithConfig(
 		cfg.transport = normalizeTransport(transportName)
 	}
 
-	switch {
-	case cancel != nil:
+	if cancel != nil {
 		return errAlreadyRunning
-	case carrierName == "":
-		return errCarrierRequired
-	case roomID == "" && carrierName != "jazz":
-		return errRoomIDRequired
-	case clientID == "":
-		return errClientIDRequired
-	case keyHex == "":
-		return errKeyHexRequired
+	}
+	if err := validateStartArgs(carrierName, roomID, clientID, keyHex); err != nil {
+		return err
 	}
 
 	roomURL := buildRoomURL(carrierName, roomID)
@@ -330,7 +408,14 @@ func IsRunning() bool {
 }
 
 func registerDefaults() {
-	session.RegisterDefaults()
+	registerSet.Do(session.RegisterDefaults)
+}
+
+func waitForCheckDone(doneCh <-chan error) {
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+	}
 }
 
 func ensureDefaultConfigLocked() {
@@ -363,11 +448,26 @@ func normalizeCarrier(carrierName string) string {
 	return carrierName
 }
 
+func validateStartArgs(carrierName, roomID, clientID, keyHex string) error {
+	switch {
+	case carrierName == "":
+		return errCarrierRequired
+	case roomID == "" && carrierName != carrierJazz:
+		return errRoomIDRequired
+	case clientID == "":
+		return errClientIDRequired
+	case keyHex == "":
+		return errKeyHexRequired
+	default:
+		return nil
+	}
+}
+
 func buildRoomURL(carrierName, roomID string) string {
 	switch carrierName {
 	case "telemost":
 		return "https://telemost.yandex.ru/j/" + roomID
-	case "jazz":
+	case carrierJazz:
 		if roomID == "" {
 			return "any"
 		}
@@ -379,9 +479,9 @@ func buildRoomURL(carrierName, roomID string) string {
 	}
 }
 
-func clamp(value, minValue, maxValue int) int {
-	if value < minValue {
-		return minValue
+func clamp(value, maxValue int) int {
+	if value < 1 {
+		return 1
 	}
 	if value > maxValue {
 		return maxValue
