@@ -54,6 +54,7 @@ var (
 	mu          sync.Mutex
 	defaults    mobileConfig
 	defaultsSet sync.Once
+	registerSet sync.Once
 	cancel      context.CancelFunc
 	done        chan struct{}
 	ready       chan struct{}
@@ -167,6 +168,96 @@ func StartWithTransport(
 	mu.Unlock()
 
 	return startWithConfig(carrierName, transportName, roomID, clientID, keyHex, socksPort, socksUser, socksPass, cfg)
+}
+
+// Check starts an isolated short-lived client and returns elapsed milliseconds once ready.
+// It does not use the singleton Start/Stop runtime, so callers may run checks in parallel.
+func Check(
+	carrierName, transportName, roomID, clientID, keyHex string,
+	socksPort int,
+	timeoutMillis int,
+	vp8FPS int,
+	vp8BatchSize int,
+) (int64, error) {
+	registerDefaults()
+	carrierName = normalizeCarrier(carrierName)
+	transportName = normalizeTransport(transportName)
+
+	switch {
+	case carrierName == "":
+		return 0, errCarrierRequired
+	case roomID == "" && carrierName != "jazz":
+		return 0, errRoomIDRequired
+	case clientID == "":
+		return 0, errClientIDRequired
+	case keyHex == "":
+		return 0, errKeyHexRequired
+	}
+
+	if timeoutMillis <= 0 {
+		timeoutMillis = 8000
+	}
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
+	readyCh := make(chan struct{})
+	doneCh := make(chan error, 1)
+	var readyOnce sync.Once
+	startedAt := time.Now()
+
+	go func() {
+		doneCh <- client.RunWithReady(
+			ctx,
+			defaultLink,
+			transportName,
+			carrierName,
+			buildRoomURL(carrierName, roomID),
+			keyHex,
+			clientID,
+			fmt.Sprintf("127.0.0.1:%d", socksPort),
+			defaultDNSServer,
+			"",
+			"",
+			func() {
+				readyOnce.Do(func() {
+					close(readyCh)
+				})
+			},
+			0,
+			0,
+			0,
+			"",
+			"",
+			0,
+			"",
+			"",
+			0,
+			0,
+			clamp(vp8FPS, 1, 120),
+			clamp(vp8BatchSize, 1, 64),
+		)
+	}()
+
+	timer := time.NewTimer(time.Duration(timeoutMillis) * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case <-readyCh:
+		elapsed := time.Since(startedAt).Milliseconds()
+		cancelFunc()
+		waitForCheckDone(doneCh)
+		return elapsed, nil
+	case err := <-doneCh:
+		if err != nil {
+			return 0, err
+		}
+		return 0, errStoppedBeforeReady
+	case <-timer.C:
+		cancelFunc()
+		waitForCheckDone(doneCh)
+		return 0, errStartTimedOut
+	}
 }
 
 func startWithConfig(
@@ -330,7 +421,14 @@ func IsRunning() bool {
 }
 
 func registerDefaults() {
-	session.RegisterDefaults()
+	registerSet.Do(session.RegisterDefaults)
+}
+
+func waitForCheckDone(doneCh <-chan error) {
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+	}
 }
 
 func ensureDefaultConfigLocked() {
