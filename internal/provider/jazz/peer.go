@@ -412,8 +412,8 @@ func (p *Peer) handleSignaling(_ context.Context) {
 	for {
 		var msg map[string]any
 		if err := p.ws.ReadJSON(&msg); err != nil {
-			logger.Debugf("ws read error: %v", err)
 			if !p.closed.Load() {
+				logger.Debugf("ws read error: %v", err)
 				p.queueReconnect()
 			}
 			return
@@ -521,7 +521,7 @@ func (p *Peer) handleSubscriberOffer(payload map[string]any) {
 	_ = p.ws.WriteJSON(map[string]any{
 		keyRoomID:    p.roomInfo.RoomID,
 		keyEvent:     "media-in",
-		"groupId":   p.groupID,
+		"groupId":    p.groupID,
 		keyRequestID: uuid.New().String(),
 		keyPayload: map[string]any{
 			"method": "rtc:answer",
@@ -553,7 +553,7 @@ func (p *Peer) sendPublisherOffer() {
 	_ = p.ws.WriteJSON(map[string]any{
 		keyRoomID:    p.roomInfo.RoomID,
 		keyEvent:     "media-in",
-		"groupId":   p.groupID,
+		"groupId":    p.groupID,
 		keyRequestID: uuid.New().String(),
 		keyPayload: map[string]any{
 			"method": "rtc:offer",

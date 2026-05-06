@@ -155,6 +155,7 @@ func (s *Server) setupResolver() {
 func smuxConfig() *smux.Config {
 	cfg := smux.DefaultConfig()
 	cfg.Version = 2
+	cfg.KeepAliveDisabled = true
 	cfg.MaxFrameSize = 32768
 	cfg.MaxReceiveBuffer = 16 * 1024 * 1024
 	cfg.MaxStreamBuffer = 1024 * 1024
@@ -306,7 +307,7 @@ func (s *Server) serve(ctx context.Context) {
 				return
 			default:
 			}
-			logger.Infof("AcceptStream returned %v - reinstalling session", err)
+			logger.Debugf("AcceptStream returned %v - reinstalling session", err)
 			s.reinstallSession(sess)
 			continue
 		}

@@ -26,6 +26,7 @@ const (
 	outboundQueueSize     = 1024
 	inboundQueueSize      = 1024
 	canSendHighWatermark  = 90 // percent
+	maxWireFPS            = 120
 	keepaliveIdlePeriod   = 100 * time.Millisecond
 )
 
@@ -82,9 +83,9 @@ type streamTransport struct {
 	// every outgoing VP8 frame. peerEpoch tracks the last epoch we observed
 	// from the remote so we can detect their restart and reset locally.
 	bindingToken uint32
-	localEpoch uint32
-	peerEpoch  atomic.Uint32
-	hadPeer    atomic.Bool
+	localEpoch   uint32
+	peerEpoch    atomic.Uint32
+	hadPeer      atomic.Bool
 
 	kcp         *kcpRuntime
 	kcpMu       sync.RWMutex
@@ -310,14 +311,7 @@ func (p *streamTransport) Features() transport.Features {
 func (p *streamTransport) writerLoop() {
 	defer close(p.writerDone)
 
-	// Send each sample at the wire-level rate (fps * batchSize) instead of
-	// bursting batchSize samples per frame interval. Bursting makes RTP
-	// timestamps disagree with wall-clock arrival, which the SFU interprets
-	// as huge jitter and starts throttling the stream after a few seconds.
-	sampleInterval := p.frameInterval / time.Duration(p.batchSize)
-	if sampleInterval <= 0 {
-		sampleInterval = p.frameInterval
-	}
+	sampleInterval := p.sampleInterval()
 
 	ticker := time.NewTicker(sampleInterval)
 	defer ticker.Stop()
@@ -353,6 +347,18 @@ func (p *streamTransport) writerLoop() {
 			})
 		}
 	}
+}
+
+func (p *streamTransport) sampleInterval() time.Duration {
+	sampleInterval := p.frameInterval
+	if p.batchSize > 1 {
+		sampleInterval = p.frameInterval / time.Duration(p.batchSize)
+	}
+	minInterval := time.Second / maxWireFPS
+	if sampleInterval < minInterval {
+		return minInterval
+	}
+	return sampleInterval
 }
 
 func (p *streamTransport) resetKCP() {

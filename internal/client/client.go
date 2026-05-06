@@ -220,6 +220,7 @@ func (c *Client) bringUpLink(
 func smuxConfig() *smux.Config {
 	cfg := smux.DefaultConfig()
 	cfg.Version = 2
+	cfg.KeepAliveDisabled = true
 	cfg.MaxFrameSize = 32768
 	cfg.MaxReceiveBuffer = 16 * 1024 * 1024
 	cfg.MaxStreamBuffer = 1024 * 1024

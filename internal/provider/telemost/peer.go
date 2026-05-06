@@ -321,7 +321,7 @@ func (p *Peer) setupPeerConnections(config webrtc.Configuration) error {
 		}
 
 		logger.Infof("telemost remote video track: codec=%s stream=%s track=%s",
-				track.Codec().MimeType, track.StreamID(), track.ID())
+			track.Codec().MimeType, track.StreamID(), track.ID())
 
 		if cb := p.videoTrackHandler(); cb != nil {
 			cb(track, receiver)
@@ -477,15 +477,15 @@ func (p *Peer) sendHello() error {
 		keyUID: uuid.New().String(),
 		"hello": map[string]interface{}{
 			"participantMeta": map[string]interface{}{
-				"name":        p.name,
-				"role":        "SPEAKER",
+				"name":         p.name,
+				"role":         "SPEAKER",
 				keyDescription: "",
-				"sendAudio":   false,
-				"sendVideo":   p.hasLocalVideoTracks(),
+				"sendAudio":    false,
+				"sendVideo":    p.hasLocalVideoTracks(),
 			},
 			"participantAttributes": map[string]interface{}{
-				"name":        p.name,
-				"role":        "SPEAKER",
+				"name":         p.name,
+				"role":         "SPEAKER",
 				keyDescription: "",
 			},
 			"sendAudio":         false,
@@ -523,8 +523,8 @@ func (p *Peer) handleSignaling(ctx context.Context) {
 	for {
 		var msg map[string]interface{}
 		if err := p.ws.ReadJSON(&msg); err != nil {
-			logger.Debugf("ws read error: %v", err)
 			if !p.closed.Load() {
+				logger.Debugf("ws read error: %v", err)
 				p.queueReconnect()
 			}
 			return
@@ -624,7 +624,7 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string, sendPub 
 		keyUID: uuid.New().String(),
 		"subscriberSdpAnswer": map[string]interface{}{
 			keyPcSeq: int(pcSeq),
-			"sdp":   answer.SDP,
+			"sdp":    answer.SDP,
 		},
 	})
 	p.wsMu.Unlock()
@@ -656,7 +656,7 @@ func (p *Peer) handleSdpOffer(offer map[string]interface{}, uid string, sendPub 
 	_ = p.ws.WriteJSON(map[string]interface{}{
 		keyUID: uuid.New().String(),
 		"publisherSdpOffer": map[string]interface{}{
-			keyPcSeq:  1,
+			keyPcSeq: 1,
 			"sdp":    pubOffer.SDP,
 			"tracks": p.publisherTrackDescriptions(),
 		},
@@ -804,7 +804,7 @@ func (p *Peer) publisherTrackDescriptions() []map[string]interface{} {
 			"label":          track.ID(),
 			"codecs":         map[string]interface{}{},
 			"groupId":        1,
-			keyDescription:    "",
+			keyDescription:   "",
 		})
 	}
 
@@ -979,7 +979,7 @@ func (p *Peer) sendPong(uid string) {
 	defer p.wsMu.Unlock()
 
 	_ = p.ws.WriteJSON(map[string]interface{}{
-		keyUID:  uid,
+		keyUID: uid,
 		"pong": map[string]interface{}{},
 	})
 }
@@ -1146,7 +1146,7 @@ func (p *Peer) setupICEHandlers() {
 				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
 				"target":        "SUBSCRIBER",
-				keyPcSeq:         1,
+				keyPcSeq:        1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -1165,7 +1165,7 @@ func (p *Peer) setupICEHandlers() {
 				"sdpMid":        init.SDPMid,
 				"sdpMlineIndex": init.SDPMLineIndex,
 				"target":        "PUBLISHER",
-				keyPcSeq:         1,
+				keyPcSeq:        1,
 			},
 		})
 		p.wsMu.Unlock()
@@ -1181,7 +1181,7 @@ func (p *Peer) sendLeave(uid string) bool {
 	}
 
 	leave := map[string]interface{}{
-		keyUID:   uid,
+		keyUID:  uid,
 		"leave": map[string]interface{}{},
 	}
 
@@ -1204,21 +1204,10 @@ func (p *Peer) Close() error {
 		} else {
 			p.removeAckWaiter(leaveUID)
 		}
-		p.stopTelemetry()
 	}
 
 	closeSignal(p.closeCh)
-
-	done := make(chan struct{})
-	go func() {
-		p.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-	}
+	p.stopSession()
 
 	if p.dc != nil {
 		_ = p.dc.Close()
@@ -1236,6 +1225,17 @@ func (p *Peer) Close() error {
 			time.Now().Add(time.Second))
 		_ = p.ws.Close()
 		p.wsMu.Unlock()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		p.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
 	}
 
 	return nil
@@ -1283,7 +1283,7 @@ func (p *Peer) sendAppPing() bool {
 	defer p.wsMu.Unlock()
 	if p.ws != nil {
 		if err := p.ws.WriteJSON(map[string]interface{}{
-			keyUID:  uuid.New().String(),
+			keyUID: uuid.New().String(),
 			"ping": map[string]interface{}{},
 		}); err != nil {
 			logger.Debugf("app ping error: %v", err)

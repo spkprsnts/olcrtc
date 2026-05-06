@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -16,6 +17,21 @@ import (
 type fakeVideoSession struct {
 	stream *fakeVideoStream
 	err    error
+}
+
+func TestSampleIntervalIsCappedForLargeBatch(t *testing.T) {
+	tr := &streamTransport{
+		frameInterval: time.Second / 60,
+		batchSize:     64,
+	}
+	if got := tr.sampleInterval(); got != time.Second/maxWireFPS {
+		t.Fatalf("sampleInterval() = %v, want %v", got, time.Second/maxWireFPS)
+	}
+
+	tr.batchSize = 1
+	if got := tr.sampleInterval(); got != tr.frameInterval {
+		t.Fatalf("sampleInterval(batch=1) = %v, want %v", got, tr.frameInterval)
+	}
 }
 
 func (s *fakeVideoSession) Capabilities() carrier.Capabilities {

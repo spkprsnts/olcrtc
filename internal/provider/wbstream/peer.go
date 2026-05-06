@@ -86,7 +86,7 @@ func (p *Peer) Connect(ctx context.Context) error {
 			},
 		},
 		OnDisconnected: func() {
-			if p.onEnded != nil {
+			if !p.closed.Load() && p.onEnded != nil {
 				p.onEnded("disconnected from livekit")
 			}
 		},
