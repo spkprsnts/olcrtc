@@ -169,6 +169,7 @@ func (c *Client) bringUpLink(
 		Transport:       transportName,
 		Carrier:         carrierName,
 		RoomURL:         roomURL,
+		ClientID:        c.clientID,
 		Name:            names.Generate(),
 		OnData:          c.onData,
 		DNSServer:       dnsServer,

@@ -36,6 +36,7 @@ type Transport interface {
 type Config struct {
 	Carrier      string
 	RoomURL      string
+	ClientID     string
 	Name         string
 	OnData       func([]byte)
 	DNSServer    string

@@ -2,7 +2,9 @@ package vp8channel
 
 import (
 	"bytes"
+	"encoding/binary"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -112,9 +114,65 @@ func TestVP8KeepaliveDoesNotLookLikeKCP(t *testing.T) {
 func testEpochHdr(epoch uint32) [epochHdrLen]byte {
 	var hdr [epochHdrLen]byte
 	hdr[0] = kcpFrameMagic
-	hdr[1] = byte(epoch >> 24)
-	hdr[2] = byte(epoch >> 16) //nolint:gosec
-	hdr[3] = byte(epoch >> 8)  //nolint:gosec
-	hdr[4] = byte(epoch)       //nolint:gosec
+	binary.BigEndian.PutUint32(hdr[tokenOff:epochOff], bindingToken("test"))
+	binary.BigEndian.PutUint32(hdr[epochOff:], epoch)
 	return hdr
+}
+
+func TestHandleIncomingFrameIgnoresLoopedBackLocalEpoch(t *testing.T) {
+	tr := &streamTransport{
+		bindingToken: bindingToken("test"),
+		localEpoch: 12345,
+		onData:     func([]byte) {},
+	}
+
+	var called atomic.Int32
+	tr.reconnectFn = func() { called.Add(1) }
+
+	frame := make([]byte, epochHdrLen+4)
+	frame[0] = kcpFrameMagic
+	binary.BigEndian.PutUint32(frame[tokenOff:epochOff], tr.bindingToken)
+	binary.BigEndian.PutUint32(frame[epochOff:], tr.localEpoch)
+	copy(frame[epochHdrLen:], []byte{1, 2, 3, 4})
+
+	tr.handleIncomingFrame(frame)
+
+	if tr.hadPeer.Load() {
+		t.Fatal("self-echo frame must not mark peer as seen")
+	}
+	if got := tr.peerEpoch.Load(); got != 0 {
+		t.Fatalf("peer epoch changed on self-echo: got %d want 0", got)
+	}
+	if got := called.Load(); got != 0 {
+		t.Fatalf("reconnect called on self-echo: got %d want 0", got)
+	}
+}
+
+func TestHandleIncomingFrameIgnoresForeignBindingToken(t *testing.T) {
+	tr := &streamTransport{
+		bindingToken: bindingToken("srv-client"),
+		localEpoch:   12345,
+		onData:       func([]byte) {},
+	}
+
+	var called atomic.Int32
+	tr.reconnectFn = func() { called.Add(1) }
+
+	frame := make([]byte, epochHdrLen+4)
+	frame[0] = kcpFrameMagic
+	binary.BigEndian.PutUint32(frame[tokenOff:epochOff], bindingToken("other-client"))
+	binary.BigEndian.PutUint32(frame[epochOff:], 999)
+	copy(frame[epochHdrLen:], []byte{1, 2, 3, 4})
+
+	tr.handleIncomingFrame(frame)
+
+	if tr.hadPeer.Load() {
+		t.Fatal("foreign frame must not mark peer as seen")
+	}
+	if got := tr.peerEpoch.Load(); got != 0 {
+		t.Fatalf("peer epoch changed on foreign frame: got %d want 0", got)
+	}
+	if got := called.Load(); got != 0 {
+		t.Fatalf("reconnect called on foreign frame: got %d want 0", got)
+	}
 }

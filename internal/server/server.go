@@ -174,6 +174,7 @@ func (s *Server) bringUpLink(
 		Transport:       transportName,
 		Carrier:         carrierName,
 		RoomURL:         roomURL,
+		ClientID:        s.clientID,
 		Name:            names.Generate(),
 		OnData:          s.onData,
 		DNSServer:       s.dnsServer,

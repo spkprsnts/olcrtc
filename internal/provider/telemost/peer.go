@@ -669,13 +669,21 @@ func (p *Peer) sendSetSlots() error {
 	p.wsMu.Lock()
 	defer p.wsMu.Unlock()
 
+	// Telemost only forwards as many remote videos as the subscriber asks for
+	// via setSlots. Two slots are enough for a single pair, but once multiple
+	// olcrtc peers share one room the later publishers may never be subscribed
+	// at all, which makes their vp8channel session appear "silent". Request a
+	// generous number of slots so each subscriber can receive every active
+	// publisher in the room.
+	slots := make([]map[string]int, 0, 8)
+	for i := 0; i < 8; i++ {
+		slots = append(slots, map[string]int{"width": 1280, "height": 720})
+	}
+
 	if err := p.ws.WriteJSON(map[string]interface{}{
 		keyUID: uuid.New().String(),
 		"setSlots": map[string]interface{}{
-			"slots": []map[string]int{
-				{"width": 1280, "height": 720},
-				{"width": 640, "height": 360},
-			},
+			"slots":              slots,
 			"audioSlotsCount":    0,
 			"key":                1,
 			"shutdownAllVideo":   nil,

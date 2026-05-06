@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,17 +47,21 @@ var vp8Keepalive = []byte{
 // session-epoch header. The wire layout inside the VP8 frame is:
 //
 //	[0]      = kcpFrameMagic (0x4B = 'K')
-//	[1..5]   = sender's session epoch (big-endian uint32)
-//	[5..]    = raw KCP packet bytes
+//	[1..5]   = binding token derived from client-id (big-endian uint32)
+//	[5..9]   = sender's session epoch (big-endian uint32)
+//	[9..]    = raw KCP packet bytes
 //
 // The epoch lets a receiver detect that the peer has restarted its KCP
 // session - typical when the SFU keeps forwarding the same remote video
 // track across our process restarts, so handleRemoteTrack never fires
 // again. On any epoch change we reset the local KCP session so both ends
-// converge on fresh state.
+// converge on fresh state. The binding token filters out foreign clients in
+// the same room before they can disturb our KCP/smux session.
 const (
 	kcpFrameMagic = byte(0x4B)
-	epochHdrLen   = 5
+	tokenOff      = 1
+	epochOff      = 5
+	epochHdrLen   = 9
 )
 
 type streamTransport struct {
@@ -76,6 +81,7 @@ type streamTransport struct {
 	// localEpoch is bumped on every KCP session restart and stamped into
 	// every outgoing VP8 frame. peerEpoch tracks the last epoch we observed
 	// from the remote so we can detect their restart and reset locally.
+	bindingToken uint32
 	localEpoch uint32
 	peerEpoch  atomic.Uint32
 	hadPeer    atomic.Bool
@@ -134,6 +140,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		writerDone:    make(chan struct{}),
 		frameInterval: time.Second / time.Duration(fps),
 		batchSize:     batchSize,
+		bindingToken:  bindingToken(cfg.ClientID),
 		localEpoch:    randomEpoch(),
 	}
 
@@ -183,8 +190,19 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 func (p *streamTransport) epochHeader() [epochHdrLen]byte {
 	var hdr [epochHdrLen]byte
 	hdr[0] = kcpFrameMagic
-	binary.BigEndian.PutUint32(hdr[1:], p.localEpoch)
+	binary.BigEndian.PutUint32(hdr[tokenOff:epochOff], p.bindingToken)
+	binary.BigEndian.PutUint32(hdr[epochOff:], p.localEpoch)
 	return hdr
+}
+
+func bindingToken(clientID string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(clientID))
+	token := h.Sum32()
+	if token == 0 {
+		token = 1
+	}
+	return token
 }
 
 func randomEpoch() uint32 {
@@ -463,9 +481,19 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 // payload to the local session or triggers a reset when the peer's epoch
 // changes (peer process restart).
 func (p *streamTransport) handleIncomingFrame(frame []byte) {
-	peerEpoch := binary.BigEndian.Uint32(frame[1:epochHdrLen])
+	if binary.BigEndian.Uint32(frame[tokenOff:epochOff]) != p.bindingToken {
+		return
+	}
+	peerEpoch := binary.BigEndian.Uint32(frame[epochOff:epochHdrLen])
 	kcpPayload := frame[epochHdrLen:]
 	if len(kcpPayload) == 0 {
+		return
+	}
+	// Some carriers/SFUs reflect our own published VP8 track back to us as a
+	// remote track. Those frames carry our local epoch, not the peer's. If we
+	// treat them as peer traffic, epoch tracking toggles between "self" and
+	// "peer" and both sides loop forever resetting smux/KCP.
+	if peerEpoch == p.localEpoch {
 		return
 	}
 
