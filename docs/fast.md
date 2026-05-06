@@ -96,6 +96,14 @@ Enter Room ID:
 Для **jazz** и **wbstream** можно нажать Enter - ID сгенерируется автоматически,
 скрипт сам его вытащит из логов и покажет.
 
+### Client ID
+
+```
+Enter Client ID [default: default]:
+```
+
+Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте.
+
 ### DNS
 
 ```
@@ -132,10 +140,11 @@ Container name: olcrtc-server
 Carrier:        telemost
 Transport:      vp8channel
 Room ID:        75587919855134
+Client ID:      default
 Encryption key: 4fc9ab159c0268a12766be00c0a85138df5905f72c5eb5780c380507ebe0174d
 ```
 
-**Сохрани Room ID и Encryption key** - они нужны для клиента.
+**Сохрани Room ID, Client ID и Encryption key** - они нужны для клиента.
 
 ---
 
@@ -149,7 +158,15 @@ cd olcrtc
 ./script/cnc.sh
 ```
 
-Отвечай на те же вопросы что на сервере - **carrier, transport, room ID должны совпадать**.
+Отвечай на те же вопросы что на сервере - **carrier, transport, room ID и client ID должны совпадать**.
+
+Когда спросит client ID:
+
+```
+Enter Client ID [default: default]: default
+```
+
+Введи тот же `client ID`, который использовал на сервере.
 
 Когда спросит ключ:
 
@@ -174,6 +191,7 @@ SOCKS5 port [default: 8808]:
 [+] Client started successfully!
 
 Container name: olcrtc-client
+Client ID:      default
 SOCKS5 proxy:   127.0.0.1:8808
 ```
 

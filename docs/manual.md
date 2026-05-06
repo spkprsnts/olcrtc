@@ -136,7 +136,19 @@ openssl rand -hex 32
 
 ---
 
-## Шаг 7: Запустить сервер
+## Шаг 7: Придумать client ID
+
+Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение.
+
+```sh
+CLIENT_ID=my-phone
+```
+
+Подойдёт любая короткая строка без пробелов: `home-laptop`, `android-01`, `pc`.
+
+---
+
+## Шаг 8: Запустить сервер
 
 На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
 
@@ -148,6 +160,7 @@ openssl rand -hex 32
   -carrier telemost \
   -transport vp8channel \
   -id 75587912855134 \
+  -client-id "$CLIENT_ID" \
   -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
   -link direct \
   -dns 1.1.1.1:53 \
@@ -166,6 +179,7 @@ openssl rand -hex 32
   -carrier jazz \
   -transport datachannel \
   -id any \
+  -client-id "$CLIENT_ID" \
   -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
   -link direct \
   -dns 1.1.1.1:53 \
@@ -188,6 +202,7 @@ Jazz room created: abc123xyz
   -carrier wbstream \
   -transport seichannel \
   -id any \
+  -client-id "$CLIENT_ID" \
   -key <hex-key> \
   -link direct \
   -dns 1.1.1.1:53 \
@@ -208,9 +223,9 @@ Jazz room created: abc123xyz
 
 ---
 
-## Шаг 8: Запустить клиент
+## Шаг 9: Запустить клиент
 
-На своей машине. Carrier, transport, id и key должны **точно совпадать** с сервером.
+На своей машине. Carrier, transport, id, `client-id` и key должны **точно совпадать** с сервером.
 
 ### telemost + vp8channel
 
@@ -220,6 +235,7 @@ Jazz room created: abc123xyz
   -carrier telemost \
   -transport vp8channel \
   -id 75587929855134 \
+  -client-id "$CLIENT_ID" \
   -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
   -link direct \
   -dns 1.1.1.1:53 \
@@ -238,6 +254,7 @@ Jazz room created: abc123xyz
   -carrier jazz \
   -transport datachannel \
   -id abc123xyz \
+  -client-id "$CLIENT_ID" \
   -key <hex-key> \
   -link direct \
   -dns 1.1.1.1:53 \
@@ -254,7 +271,7 @@ SOCKS5 server listening on 127.0.0.1:1080
 
 ---
 
-## Шаг 9: Проверить
+## Шаг 10: Проверить
 
 ```sh
 curl --socks5-hostname 127.0.0.1:1080 https://icanhazip.com

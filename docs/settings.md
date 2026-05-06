@@ -23,6 +23,7 @@
 | `-carrier` | `telemost`, `jazz` или `wbstream` |
 | `-transport` | `datachannel`, `vp8channel`, `seichannel` или `videochannel` |
 | `-id` | Room ID. Для jazz/wbstream можно `any` - сгенерируется автоматически |
+| `-client-id` | Общий идентификатор клиента. Должен совпадать на сервере и клиенте |
 | `-key` | Ключ шифрования hex 64 символа. Генерация: `openssl rand -hex 32` |
 | `-link` | Всегда `direct` |
 | `-data` | Всегда `data` |
@@ -101,12 +102,12 @@
 ```sh
 # сервер
 ./olcrtc -mode srv -carrier telemost -transport vp8channel \
-  -id <room-id> -key <hex-key> -link direct -data data \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -vp8-fps 60 -vp8-batch 64
 
 # клиент
 ./olcrtc -mode cnc -carrier telemost -transport vp8channel \
-  -id <room-id> -key <hex-key> -link direct -data data \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -vp8-fps 60 -vp8-batch 64
 ```
@@ -116,11 +117,11 @@
 ```sh
 # сервер - room ID создастся сам, смотри логи
 ./olcrtc -mode srv -carrier jazz -transport datachannel \
-  -id any -key <hex-key> -link direct -data data
+  -id any -client-id <client-id> -key <hex-key> -link direct -data data
 
 # клиент
 ./olcrtc -mode cnc -carrier jazz -transport datachannel \
-  -id <room-id> -key <hex-key> -link direct -data data \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080
 ```
 
@@ -129,13 +130,13 @@
 ```sh
 # сервер
 ./olcrtc -mode srv -carrier telemost -transport videochannel \
-  -id <room-id> -key <hex-key> -link direct -data data \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -video-codec qrcode -video-w 1080 -video-h 1080 \
   -video-fps 60 -video-bitrate 5000k -video-hw none
 
 # клиент
 ./olcrtc -mode cnc -carrier telemost -transport videochannel \
-  -id <room-id> -key <hex-key> -link direct -data data \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
   -socks-host 127.0.0.1 -socks-port 1080 \
   -video-codec qrcode -video-w 1080 -video-h 1080 \
   -video-fps 60 -video-bitrate 5000k -video-hw none
