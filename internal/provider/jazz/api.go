@@ -13,10 +13,9 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-const (
-	apiBase           = "https://bk.salutejazz.ru"
-	authTypeAnonymous = "ANONYMOUS"
-)
+const authTypeAnonymous = "ANONYMOUS"
+
+var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
 
 // RoomInfo contains connection details for a SaluteJazz room.
 type RoomInfo struct {

@@ -13,14 +13,14 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-const apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
+var apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
 
 var ErrAPI = errors.New("api error") //nolint:revive
 
 type ConnectionInfo struct { //nolint:revive
-	RoomID       string `json:"room_id"`             //nolint:tagliatelle
-	PeerID       string `json:"peer_id"`             //nolint:tagliatelle
-	Credentials  string `json:"credentials"`         //nolint:tagliatelle
+	RoomID       string `json:"room_id"`     //nolint:tagliatelle
+	PeerID       string `json:"peer_id"`     //nolint:tagliatelle
+	Credentials  string `json:"credentials"` //nolint:tagliatelle
 	ClientConfig struct {
 		MediaServerURL string `json:"media_server_url"` //nolint:tagliatelle
 	} `json:"client_configuration"` //nolint:tagliatelle

@@ -12,7 +12,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-const apiBase = "https://stream.wb.ru"
+var apiBase = "https://stream.wb.ru" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
 
 var (
 	errGuestRegister = errors.New("guest register failed")
