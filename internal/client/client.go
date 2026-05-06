@@ -45,6 +45,7 @@ type Client struct {
 	conn      *muxconn.Conn
 	session   *smux.Session
 	sessMu    sync.RWMutex
+	clientID  string
 	dnsServer string
 }
 
@@ -55,7 +56,8 @@ func Run(
 	transportName,
 	carrierName,
 	roomURL,
-	keyHex string,
+	keyHex,
+	clientID string,
 	localAddr string,
 	dnsServer,
 	socksUser string,
@@ -74,7 +76,7 @@ func Run(
 	vp8BatchSize int,
 ) error {
 	return RunWithReady(
-		ctx, linkName, transportName, carrierName, roomURL, keyHex, localAddr,
+		ctx, linkName, transportName, carrierName, roomURL, keyHex, clientID, localAddr,
 		dnsServer, socksUser, socksPass, nil,
 		videoWidth, videoHeight, videoFPS, videoBitrate, videoHW,
 		videoQRSize, videoQRRecovery, videoCodec, videoTileModule, videoTileRS,
@@ -89,7 +91,8 @@ func RunWithReady(
 	transportName,
 	carrierName,
 	roomURL,
-	keyHex string,
+	keyHex,
+	clientID string,
 	localAddr string,
 	dnsServer,
 	_ string,
@@ -116,7 +119,7 @@ func RunWithReady(
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
-	c := &Client{cipher: cipher, dnsServer: dnsServer}
+	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer}
 
 	if err := c.bringUpLink(
 		runCtx, linkName, transportName, carrierName, roomURL, cancel,
@@ -355,9 +358,10 @@ func (c *Client) tunnel(conn net.Conn, sess *smux.Session, targetAddr string, ta
 
 func (c *Client) sendConnectRequest(stream *smux.Stream, targetAddr string, targetPort int) error {
 	connectReq, err := json.Marshal(map[string]any{
-		"cmd":  "connect",
-		"addr": targetAddr,
-		"port": targetPort,
+		"cmd":       "connect",
+		"client_id": c.clientID,
+		"addr":      targetAddr,
+		"port":      targetPort,
 	})
 	if err != nil {
 		return fmt.Errorf("sid=%d marshal connect req: %w", stream.ID(), err)

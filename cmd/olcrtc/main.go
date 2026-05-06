@@ -28,6 +28,7 @@ type config struct {
 	transport      string
 	carrier        string
 	roomID         string
+	clientID       string
 	provider       string
 	socksPort      int
 	socksHost      string
@@ -110,6 +111,7 @@ func parseFlags() config {
 	flag.StringVar(&cfg.transport, "transport", "", "Transport: datachannel, videochannel, seichannel")
 	flag.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wbstream")
 	flag.StringVar(&cfg.roomID, "id", "", "Room ID")
+	flag.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
 	flag.StringVar(&cfg.provider, "provider", "", "Deprecated alias for -carrier")
 	flag.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
 	flag.StringVar(&cfg.socksHost, "socks-host", "", "SOCKS5 listen host (client only)")
@@ -178,6 +180,7 @@ func toSessionConfig(cfg config) session.Config {
 		Transport:       cfg.transport,
 		Carrier:         firstNonEmpty(cfg.carrier, cfg.provider),
 		RoomID:          cfg.roomID,
+		ClientID:        cfg.clientID,
 		KeyHex:          cfg.keyHex,
 		SOCKSHost:       cfg.socksHost,
 		SOCKSPort:       cfg.socksPort,

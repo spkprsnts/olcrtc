@@ -34,6 +34,7 @@ var (
 	errAlreadyRunning     = errors.New("olcRTC already running")
 	errCarrierRequired    = errors.New("carrier is required")
 	errRoomIDRequired     = errors.New("roomID is required")
+	errClientIDRequired   = errors.New("clientID is required")
 	errKeyHexRequired     = errors.New("keyHex is required")
 	errNotRunning         = errors.New("olcRTC is not running")
 	errStoppedBeforeReady = errors.New("olcRTC stopped before becoming ready")
@@ -140,21 +141,22 @@ func SetDebug(enabled bool) {
 // Start launches the olcRTC client in background.
 // carrierName: carrier/provider name ("telemost", "jazz", "wbstream", "wbstream")
 // roomID: carrier-specific room ID
+// clientID: client identifier that must match the server's -client-id
 // keyHex: 64-char hex encryption key
 // socksPort: local SOCKS5 proxy port (e.g. 10808)
 // socksUser/socksPass: SOCKS5 credentials (empty = no auth).
-func Start(carrierName, roomID, keyHex string, socksPort int, socksUser, socksPass string) error {
+func Start(carrierName, roomID, clientID, keyHex string, socksPort int, socksUser, socksPass string) error {
 	mu.Lock()
 	ensureDefaultConfigLocked()
 	cfg := defaults
 	mu.Unlock()
 
-	return startWithConfig(carrierName, cfg.transport, roomID, keyHex, socksPort, socksUser, socksPass, cfg)
+	return startWithConfig(carrierName, cfg.transport, roomID, clientID, keyHex, socksPort, socksUser, socksPass, cfg)
 }
 
 // StartWithTransport launches the client with an explicit transport for this start.
 func StartWithTransport(
-	carrierName, transportName, roomID, keyHex string,
+	carrierName, transportName, roomID, clientID, keyHex string,
 	socksPort int,
 	socksUser, socksPass string,
 ) error {
@@ -164,11 +166,11 @@ func StartWithTransport(
 	cfg.transport = transportName
 	mu.Unlock()
 
-	return startWithConfig(carrierName, transportName, roomID, keyHex, socksPort, socksUser, socksPass, cfg)
+	return startWithConfig(carrierName, transportName, roomID, clientID, keyHex, socksPort, socksUser, socksPass, cfg)
 }
 
 func startWithConfig(
-	carrierName, transportName, roomID, keyHex string,
+	carrierName, transportName, roomID, clientID, keyHex string,
 	socksPort int,
 	socksUser, socksPass string,
 	cfg mobileConfig,
@@ -189,6 +191,8 @@ func startWithConfig(
 		return errCarrierRequired
 	case roomID == "" && carrierName != "jazz":
 		return errRoomIDRequired
+	case clientID == "":
+		return errClientIDRequired
 	case keyHex == "":
 		return errKeyHexRequired
 	}
@@ -213,6 +217,7 @@ func startWithConfig(
 			carrierName,
 			roomURL,
 			keyHex,
+			clientID,
 			fmt.Sprintf("127.0.0.1:%d", socksPort),
 			cfg.dnsServer,
 			socksUser,

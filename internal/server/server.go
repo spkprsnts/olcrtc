@@ -41,6 +41,7 @@ type Server struct {
 	sessMu         sync.RWMutex
 	reinstallMu    sync.Mutex
 	wg             sync.WaitGroup
+	clientID       string
 	dnsServer      string
 	resolver       *net.Resolver
 	socksProxyAddr string
@@ -49,9 +50,10 @@ type Server struct {
 
 // ConnectRequest is a message from the client to establish a new connection.
 type ConnectRequest struct {
-	Cmd  string `json:"cmd"`
-	Addr string `json:"addr"`
-	Port int    `json:"port"`
+	Cmd      string `json:"cmd"`
+	ClientID string `json:"client_id"`
+	Addr     string `json:"addr"`
+	Port     int    `json:"port"`
 }
 
 // Run starts the server with the specified parameters.
@@ -61,7 +63,8 @@ func Run(
 	transportName,
 	carrierName,
 	roomURL,
-	keyHex string,
+	keyHex,
+	clientID string,
 	dnsServer,
 	socksProxyAddr string,
 	socksProxyPort int,
@@ -88,6 +91,7 @@ func Run(
 
 	s := &Server{
 		cipher:         cipher,
+		clientID:       clientID,
 		dnsServer:      dnsServer,
 		socksProxyAddr: socksProxyAddr,
 		socksProxyPort: socksProxyPort,
@@ -339,6 +343,10 @@ func (s *Server) handleStream(_ context.Context, stream *smux.Stream) {
 			header = append(header, tmp[:n]...)
 			if req, ok := parseConnectRequest(header); ok {
 				_ = stream.SetReadDeadline(time.Time{})
+				if !s.authorizeRequest(req) {
+					logger.Warnf("sid=%d rejected: client_id mismatch", stream.ID())
+					return
+				}
 				s.dispatch(stream, req)
 				return
 			}
@@ -361,6 +369,10 @@ func parseConnectRequest(buf []byte) (ConnectRequest, bool) {
 		return req, false
 	}
 	return req, true
+}
+
+func (s *Server) authorizeRequest(req ConnectRequest) bool {
+	return req.ClientID == s.clientID
 }
 
 func (s *Server) dispatch(stream *smux.Stream, req ConnectRequest) {
