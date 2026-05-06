@@ -124,6 +124,10 @@ if [ -z "$ROOM_ID" ]; then
 fi
 
 echo ""
+read -p "Enter Client ID [default: default]: " CLIENT_ID_INPUT
+CLIENT_ID=${CLIENT_ID_INPUT:-default}
+
+echo ""
 read -p "Enter Encryption Key (hex): " KEY
 
 if [ -z "$KEY" ]; then
@@ -253,7 +257,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode cnc -carrier "$CARRIER" -id "$ROOM_ID" -key "$KEY" \
+    ./olcrtc -mode cnc -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}"
 
@@ -266,6 +270,7 @@ echo "Container name: $CONTAINER_NAME"
 echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
+echo "Client ID:      $CLIENT_ID"
 echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT"
 echo ""
 echo "View logs:"

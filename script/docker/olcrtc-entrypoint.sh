@@ -37,6 +37,7 @@ link="${OLCRTC_LINK:-direct}"
 data_dir="${OLCRTC_DATA_DIR:-/usr/share/olcrtc}"
 dns_server="${OLCRTC_DNS:-1.1.1.1:53}"
 key="${OLCRTC_KEY:-${KEY:-}}"
+client_id="${OLCRTC_CLIENT_ID:-${CLIENT_ID:-}}"
 key_file="${OLCRTC_KEY_FILE:-/var/lib/olcrtc/key.hex}"
 socks_proxy="${OLCRTC_SOCKS_PROXY:-}"
 socks_proxy_port="${OLCRTC_SOCKS_PROXY_PORT:-1080}"
@@ -59,6 +60,7 @@ vp8_batch="${OLCRTC_VP8_BATCH:-0}"
 [ -n "$carrier" ] || die "set OLCRTC_CARRIER (e.g. telemost, jazz, wbstream)"
 [ -n "$transport" ] || die "set OLCRTC_TRANSPORT (e.g. datachannel, videochannel, seichannel, vp8channel)"
 [ -n "$room_id" ] || die "set OLCRTC_ROOM_ID to the room identifier"
+[ -n "$client_id" ] || die "set OLCRTC_CLIENT_ID to bind the expected client"
 
 if [ -z "$key" ]; then
     if [ -s "$key_file" ]; then
@@ -84,6 +86,7 @@ set -- /usr/local/bin/olcrtc \
     -mode "$mode" \
     -carrier "$carrier" \
     -id "$room_id" \
+    -client-id "$client_id" \
     -key "$key" \
     -link "$link" \
     -transport "$transport" \

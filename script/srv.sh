@@ -150,6 +150,10 @@ else
 fi
 
 echo ""
+read -p "Enter Client ID [default: default]: " CLIENT_ID_INPUT
+CLIENT_ID=${CLIENT_ID_INPUT:-default}
+
+echo ""
 read -p "DNS server [default: 1.1.1.1:53]: " DNS_INPUT
 DNS=${DNS_INPUT:-1.1.1.1:53}
 
@@ -296,7 +300,7 @@ podman run -d \
     -v $WORK_DIR:/app:Z \
     -w /app \
     $IMAGE_NAME \
-    ./olcrtc -mode srv -carrier "$CARRIER" -id "$ROOM_ID" -key "$KEY" \
+    ./olcrtc -mode srv -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
@@ -341,6 +345,7 @@ echo "Container name: $CONTAINER_NAME"
 echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ACTUAL_ROOM_ID"
+echo "Client ID:      $CLIENT_ID"
 echo "Encryption key: $KEY"
 
 if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
@@ -355,7 +360,7 @@ echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ACTUAL_ROOM_ID\" -key \"$KEY\" \\"
+echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ACTUAL_ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
 echo ""
 echo -n "    -link direct -transport \"$TRANSPORT\" -dns 1.1.1.1:53 -data data \\"
 echo ""
