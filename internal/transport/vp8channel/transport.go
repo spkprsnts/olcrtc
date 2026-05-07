@@ -469,33 +469,16 @@ func (s *vp8FrameState) processRTPPacket(pkt *rtp.Packet) []byte {
 func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 	var state vp8FrameState
 	buf := make([]byte, rtpBufSize)
-	var rtpCount, frameCount uint64
-	var unmarshalErr, depackErr uint64
 
 	for {
 		n, _, err := track.Read(buf)
 		if err != nil {
-			logger.Debugf("vp8channel: readVP8Track exit err=%v rtpPkts=%d frames=%d unmarshalErr=%d depackErr=%d",
-				err, rtpCount, frameCount, unmarshalErr, depackErr)
 			return
 		}
 
 		pkt := &rtp.Packet{}
 		if pkt.Unmarshal(buf[:n]) != nil {
-			unmarshalErr++
 			continue
-		}
-
-		rtpCount++
-		logger.Debugf("vp8channel: rtp seq=%d marker=%v payloadLen=%d", pkt.SequenceNumber, pkt.Marker, len(pkt.Payload))
-
-		var vp8Pkt codecs.VP8Packet
-		vp8Payload, derr := vp8Pkt.Unmarshal(pkt.Payload)
-		if derr != nil {
-			depackErr++
-			logger.Debugf("vp8channel: VP8 depack error #%d: %v", depackErr, derr)
-		} else {
-			logger.Debugf("vp8channel: vp8pkt S=%d marker=%v payloadLen=%d", vp8Pkt.S, pkt.Marker, len(vp8Payload))
 		}
 
 		frame := state.processRTPPacket(pkt)
@@ -503,17 +486,13 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 			continue
 		}
 
-		frameCount++
-		logger.Debugf("vp8channel: frame #%d len=%d", frameCount, len(frame))
-
 		p.handleIncomingFrame(frame)
 	}
 }
 
-func (p *streamTransport) handleFirstPeer(peerEpoch uint32, frame []byte) {
+func (p *streamTransport) handleFirstPeer(peerEpoch uint32) {
 	p.peerEpoch.Store(peerEpoch)
-	logger.Infof("vp8channel: peer first seen epoch=0x%08x token=0x%08x",
-		peerEpoch, binary.BigEndian.Uint32(frame[tokenOff:epochOff]))
+	logger.Infof("vp8channel: peer first seen epoch=0x%08x", peerEpoch)
 	p.kcpOnce.Do(func() {
 		rt, err := startKCP(p.outbound, p.onData, p.epochHeader())
 		if err != nil {
@@ -549,10 +528,8 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 	}
 
 	if !p.hadPeer.Swap(true) {
-		p.handleFirstPeer(peerEpoch, frame)
-		return
-	}
-	if prev := p.peerEpoch.Load(); prev != peerEpoch {
+		p.handleFirstPeer(peerEpoch)
+	} else if prev := p.peerEpoch.Load(); prev != peerEpoch {
 		// Peer restarted its KCP session. Reset ours so the conv state
 		// machines re-converge. CAS guards against double-reset when
 		// fragmented frames straddle the epoch boundary.
