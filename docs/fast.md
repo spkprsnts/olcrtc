@@ -10,8 +10,8 @@
 
 # Быстрый старт (через скрипты)
 
-Этот способ самый простой. Тебе не нужен Go, не нужно ничего компилировать.
-Скрипт всё сделает сам: скачает исходники, соберёт в контейнере, запустит.
+Этот способ самый простой. Все запускается в контейнере [Podman](https://ru.wikipedia.org/wiki/Podman).
+Скрипт всё сделает сам: скачает [исходники](https://github.com/openlibrecommunity/olcrtc), соберёт в контейнере, запустит.
 
 Проект в бете. По проблемам: t.me/openlibrecommunity
 
@@ -22,22 +22,20 @@
 ### git
 
 ```sh
-apt install git # Debian / Ubuntu
-pacman -S git # Arch
-dnf install git # Fedora / RHEL / CentOS
+apt install git    # Debian / Ubuntu
+pacman -S git      # Arch
+dnf install git    # Fedora / RHEL / CentOS
 ```
 
 ### podman
 
-Скрипт попробует установить podman сам, но лучше поставить заранее.
-
 ```sh
-apt install podman # Debian / Ubuntu
-pacman -S podman # Arch 
-dnf install podman # Fedora / RHEL / CentOS
+apt install podman   # Debian / Ubuntu
+pacman -S podman     # Arch
+dnf install podman   # Fedora / RHEL / CentOS
 ```
 
-### curl (опционально, только для проверки)
+### curl
 
 ```sh
 apt install curl      # Debian/Ubuntu
@@ -64,7 +62,7 @@ cd olcrtc
 ./script/srv.sh
 ```
 
-Скрипт задаст несколько вопросов. Отвечай Enter если устраивает значение по умолчанию.
+Скрипт задаст несколько вопросов.
 
 ### Carrier (на каком сервисе передавать трафик)
 
@@ -76,7 +74,7 @@ Select carrier:
 Enter choice [1-3, default: 1]:
 ```
 
-Выбери сервис. Смотри матрицу в [settings.md](settings.md) какой транспорт с каким carrier работает.
+Выбери сервис. Смотри матрицу в [settings.md](settings.md) какой transport (способ передачи данных) с каким carrier (сервис) работает.
 
 ### Transport (как именно передавать данные)
 
@@ -90,10 +88,10 @@ Enter choice [1-4, default: 1]:
 ```
 
 Рекомендации:
-- **datachannel** - работает везде помимо telemost
-- **vp8channel** - работает везде включая telemost
-- **seichannel** - работает везде помимо telemost
-- **videochannel** - работает везде включая telemost
+- **datachannel** - работает везде помимо telemost, за него Jazz может забанить ваш IP, быстрый и мелкий пинг.
+- **vp8channel** - работает везде, быстрый но большой пинг.
+- **seichannel** - работает везде, медленный но мелкий пинг.
+- **videochannel** - работает везде, медленный и большой пинг.
 
 ### Room ID
 
@@ -103,8 +101,7 @@ Enter Room ID:
 
 Для **telemost** - создай руму через сайт [телемоста](https://telemost.yandex.ru/) и вставь его.
 
-Для **jazz** и **wbstream** можно нажать Enter - ID сгенерируется автоматически,
-скрипт сам его вытащит из логов и покажет.
+Для **jazz** и **wbstream** можно нажать Enter - ID сгенерируется автоматически, или создать румы через сайт [jazz](https://salutejazz.ru/calls/create) или [wbstream](https://stream.wb.ru).
 
 ### Client ID
 
@@ -112,7 +109,7 @@ Enter Room ID:
 Enter Client ID [default: default]:
 ```
 
-Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте.
+Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте, используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
 
 ### DNS
 
@@ -120,7 +117,7 @@ Enter Client ID [default: default]:
 DNS server [default: 1.1.1.1:53]:
 ```
 
-Нажми Enter. Менять не нужно если нет причин, на всякий можно поставить 77.88.8.8.
+Нажми Enter. Менять не нужно если нет причин, на всякий можно поставить 77.88.8.8 или DNS твоего провайдера.
 
 ### SOCKS5 прокси для исходящего трафика
 
@@ -128,7 +125,58 @@ DNS server [default: 1.1.1.1:53]:
 Use SOCKS5 proxy for egress? (y/N):
 ```
 
-Если нет - просто Enter. Если хочешь чтобы сервер сам ходил через прокси - введи `y`.
+Если нет - просто Enter, если надо то введи `y`. Нужно чтобы сервер сам ходил через прокси.
+
+### Параметры транспорта (только для videochannel)
+
+```
+Video codec:
+  1) qrcode
+  2) tile (requires 1080x1080)
+Enter choice [1-2, default: 1]:
+```
+
+Выбери кодек:
+- **qrcode** - QR-коды, настраиваемое разрешение, стабильный, медленный.
+- **tile** - тайловый кодек, только 1080x1080, поддерживает Reed-Solomon коррекцию, не стабилен, более быстрый.
+
+#### qrcode
+
+```
+Video width [default: 1920]:
+Video height [default: 1080]:
+QR error correction (low/medium/high/highest) [default: low]:
+QR fragment size bytes [default: 0 (auto)]:
+```
+
+- **Video width / height** - разрешение видео. Больше = больше данных за кадр, но тяжелее поток.
+- **QR error correction** - коррекция ошибок: `low` быстрее, `highest` надёжнее при плохом канале.
+- **QR fragment size** - размер фрагмента в байтах. `0` = автоматически.
+
+#### tile
+
+```
+[*] Tile codec selected - forcing 1080x1080
+Tile module size in pixels 1..270 [default: 4]:
+Tile Reed-Solomon parity percent 0..200 [default: 20]:
+```
+
+- **Tile module size** - размер одного тайла в пикселях. Меньше = больше данных за кадр.
+- **Tile Reed-Solomon parity** - процент избыточности. `0` = без коррекции, `20` оптимально.
+
+#### Общие параметры (для обоих кодеков)
+
+```
+Video FPS [default: 30]:
+Video bitrate [default: 2M]:
+Hardware acceleration (none/nvenc) [default: none]:
+```
+
+- **Video FPS** - кадров в секунду. Больше FPS = выше пропускная способность, больше нагрузка на CPU.
+- **Video bitrate** - битрейт ffmpeg. Примеры: `2M`, `5M`, `500K`.
+- **Hardware acceleration** - `none` если нет GPU, `nvenc` для NVIDIA GPU.
+
+---
 
 ### Параметры транспорта (только для vp8channel)
 
@@ -224,7 +272,7 @@ SOCKS5 proxy:   127.0.0.1:8808
 curl --socks5-hostname 127.0.0.1:8808 https://icanhazip.com
 ```
 
-Должен вернуть IP твоего сервера, а не домашний IP.
+Должен вернуть IP твоего сервера.
 
 Или выставить переменную окружения чтобы всё шло через прокси:
 
@@ -254,11 +302,3 @@ podman stop olcrtc-client
 ### Перезапустить (просто запусти скрипт снова)
 
 Скрипт сам останавливает старый контейнер перед стартом нового.
-
----
-
-## Частые проблемы
-
-**`podman: command not found`** - установи podman (см. начало документа).
-
-**`git: command not found`** - установи git.
