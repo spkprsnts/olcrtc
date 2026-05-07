@@ -7,6 +7,61 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Run tests
+        run: go test -count=1 ./...
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Run tests with coverage
+        run: go test -count=1 ./... --cover
+
+  real-e2e:
+    name: Real E2E (Providers x Transports)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Install media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run real provider e2e matrix
+        run: |
+          go test -count=1 -v ./internal/e2e \
+            -run '^TestRealProviderTransportMatrix$' \
+            -olcrtc.real-e2e
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
