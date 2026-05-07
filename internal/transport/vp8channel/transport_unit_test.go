@@ -113,7 +113,7 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 
 	peerEpoch := uint32(0x200)
 	firstFrame := make([]byte, epochHdrLen+4)
-	firstFrame[0] = kcpFrameMagic
+	copy(firstFrame, vp8Keepalive)
 	binary.BigEndian.PutUint32(firstFrame[tokenOff:epochOff], tr.bindingToken)
 	binary.BigEndian.PutUint32(firstFrame[epochOff:epochHdrLen], peerEpoch)
 	copy(firstFrame[epochHdrLen:], []byte("data"))
@@ -174,7 +174,7 @@ func TestEpochHeaderTokenAndOutboundCapacity(t *testing.T) {
 	}
 
 	hdr := tr.epochHeader()
-	if hdr[0] != kcpFrameMagic ||
+	if !bytes.Equal(hdr[:tokenOff], vp8Keepalive) ||
 		binary.BigEndian.Uint32(hdr[tokenOff:epochOff]) != tr.bindingToken ||
 		binary.BigEndian.Uint32(hdr[epochOff:]) != tr.localEpoch {
 		t.Fatalf("epochHeader() = %x", hdr)
@@ -182,6 +182,15 @@ func TestEpochHeaderTokenAndOutboundCapacity(t *testing.T) {
 	if bindingToken("") == 0 || randomEpoch() == 0 {
 		t.Fatal("bindingToken/randomEpoch returned zero")
 	}
+
+	rt, err := startKCP(tr.outbound, nil, tr.epochHeader())
+	if err != nil {
+		t.Fatalf("startKCP: %v", err)
+	}
+	defer rt.close()
+	tr.kcpMu.Lock()
+	tr.kcp = rt
+	tr.kcpMu.Unlock()
 
 	for len(tr.outbound) < cap(tr.outbound)*canSendHighWatermark/100 {
 		tr.outbound <- []byte("queued")
@@ -200,7 +209,7 @@ func TestEpochHeaderTokenAndOutboundCapacity(t *testing.T) {
 }
 
 func TestVP8FrameStateAssemblesAndRejectsCorruptFrames(t *testing.T) {
-	frame := append([]byte{kcpFrameMagic}, bytes.Repeat([]byte{0x01}, epochHdrLen)...)
+	frame := append(append([]byte(nil), vp8Keepalive...), bytes.Repeat([]byte{0x01}, epochHdrLen-len(vp8Keepalive))...)
 	var state vp8FrameState
 
 	got := state.processRTPPacket(&rtp.Packet{
@@ -264,7 +273,7 @@ func TestHandleIncomingFrameEpochFilteringAndReconnect(t *testing.T) {
 
 	mkFrame := func(token, epoch uint32, payload []byte) []byte {
 		frame := make([]byte, epochHdrLen+len(payload))
-		frame[0] = kcpFrameMagic
+		copy(frame, vp8Keepalive)
 		binary.BigEndian.PutUint32(frame[tokenOff:epochOff], token)
 		binary.BigEndian.PutUint32(frame[epochOff:epochHdrLen], epoch)
 		copy(frame[epochHdrLen:], payload)
@@ -273,12 +282,11 @@ func TestHandleIncomingFrameEpochFilteringAndReconnect(t *testing.T) {
 
 	tr.handleIncomingFrame(mkFrame(bindingToken("other"), 1, []byte("x")))
 	tr.handleIncomingFrame(mkFrame(tr.bindingToken, tr.localEpoch, []byte("self")))
-	tr.handleIncomingFrame(mkFrame(tr.bindingToken, 1, nil))
 	if tr.hadPeer.Load() || called != 0 {
 		t.Fatal("filtered frames changed peer state")
 	}
 
-	tr.handleIncomingFrame(mkFrame(tr.bindingToken, 1, []byte("first")))
+	tr.handleIncomingFrame(mkFrame(tr.bindingToken, 1, nil))
 	if !tr.hadPeer.Load() || tr.peerEpoch.Load() != 1 {
 		t.Fatalf("peer state after first frame: had=%v epoch=%d", tr.hadPeer.Load(), tr.peerEpoch.Load())
 	}

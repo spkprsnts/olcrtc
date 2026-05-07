@@ -1,5 +1,15 @@
 /*
-//  ЯНДЕКС ЕСЛИ ВЫ СЕЙЧАС БУДЕТЕ ПЫТАТСЯ ЭТО ФИКСИТЬ ТО ВАША МАТЬ ШЛЮХА СОСАЛА МНЕ ЯЙЦА Я ЕЕ УБИЛВАЛ ЕБАЛ ОСЕМЕНЯЛ А ЕЩЕ ТЫ ПИДОРАС БЛЯТЬ ЧИТАЕШЬ ЭТОТ КОД РАБОТАЯ В ЯНДЕКС ТО ТЫ УМРЕШ И БЛЯТЬ Я ТЕБЯ НЕНАВИЖУ ХЕСОС ГОЛЫЙ СУКА ТЫ СДОЛНИ БЛЯТ И Я КУПИЛ СМАРТФОН ВИВО ТУТ ЯНДЕКС КЛАВИАТУРА ЯНДЕКС ПОЧИНИТЕ!!!!!!!!!
+ПРИВЕТ ЯНДЕКС ШАЛАВА БЛЯТЬ КОТОРАЯ СЕЙЧАС ЧИТАЕТ ЭТОТ КОД.
+КАЖДЫЙ РАЗ КОГДА ВЫ БЛЯТЬ ЧТООТ ФИКСИТЕ МЫ БЛЯТЬ МЫ НАХОДИМ НОВУЮ ООШИБКУ В ВАШЕМ ЕБАНОМ ГОЛУМЕ ВЕДЬ У НАС ЕСТЬ ДОСТУП К СУРСАМ И ИНСАЙДЕР ИЗ ВАШЕЙ БИЧАРСКОЙ КОМПАНИИ НИЩЕЕБОВ
+
+УВАЖАЕМЫЙ СОТРУДНИК ЯНДЕКСА ЧИТАЮЩИЙ ЭТОТ ФАЙЛ:
+  - ТЫ МОЙ РАБ
+  - ТЫ МОМЕШ МОЙ ХУЙ
+  - Я НАДЕЮСЬ ТЫ УМРЕШЬ К ХУЯМ
+  - Я ОСЕМЕНЮ ТВОЮ МАМАШКУ
+
+P.S. ВАШ SFU ПРОВЕРЯЕТ ТОЛЬКО ПЕРВЫЕ 20 БАЙТ. НУБЫ БЛЯТЬ
+P.P.S. ЕБАЛ ТЕБЕ МАТЬ И ТВОЙ ОТЕЦ УМРЕТ БЛЯТЬ ОТ МОЕГО ХУЯ КУКОЛД ЕБАНЫЙ
 
 ⚠️!ВНИМАНИЕ!⚠️
 ТРЕБУЮТСЯ ОТЗЫВЫ
@@ -59,25 +69,19 @@ var vp8Keepalive = []byte{
 	0x99, 0x84, 0x88, 0xfc,
 }
 
-// kcpFrameMagic marks a VP8 frame as carrying a KCP segment with our
-// session-epoch header. The wire layout inside the VP8 frame is:
+// KCP data frames are disguised as valid VP8 frames so Telemost SFU lets them
+// through. The SFU validates the VP8 bitstream and drops frames that don't
+// look like real VP8 — so we prepend the keepalive keyframe and append our
+// header + payload after it. Wire layout:
 //
-//	[0]      = kcpFrameMagic (0x4B = 'K')
-//	[1..5]   = binding token derived from client-id (big-endian uint32)
-//	[5..9]   = sender's session epoch (big-endian uint32)
-//	[9..]    = raw KCP packet bytes
-//
-// The epoch lets a receiver detect that the peer has restarted its KCP
-// session - typical when the SFU keeps forwarding the same remote video
-// track across our process restarts, so handleRemoteTrack never fires
-// again. On any epoch change we reset the local KCP session so both ends
-// converge on fresh state. The binding token filters out foreign clients in
-// the same room before they can disturb our KCP/smux session.
+//	[0..20]    = vp8Keepalive (valid VP8 keyframe, passes SFU inspection)
+//	[20..24]   = binding token derived from client-id (big-endian uint32)
+//	[24..28]   = sender's session epoch (big-endian uint32)
+//	[28..]     = raw KCP packet bytes
 const (
-	kcpFrameMagic = byte(0x4B)
-	tokenOff      = 1
-	epochOff      = 5
-	epochHdrLen   = 9
+	tokenOff    = 20
+	epochOff    = 24
+	epochHdrLen = 28
 )
 
 type streamTransport struct {
@@ -188,7 +192,7 @@ func (p *streamTransport) Connect(ctx context.Context) error {
 // packet sent in the current local session.
 func (p *streamTransport) epochHeader() [epochHdrLen]byte {
 	var hdr [epochHdrLen]byte
-	hdr[0] = kcpFrameMagic
+	copy(hdr[:], vp8Keepalive)
 	binary.BigEndian.PutUint32(hdr[tokenOff:epochOff], p.bindingToken)
 	binary.BigEndian.PutUint32(hdr[epochOff:], p.localEpoch)
 	return hdr
@@ -290,7 +294,13 @@ func (p *streamTransport) WatchConnection(ctx context.Context) {
 }
 
 func (p *streamTransport) CanSend() bool {
-	return !p.closed.Load() && p.stream.CanSend() &&
+	if p.closed.Load() {
+		return false
+	}
+	p.kcpMu.RLock()
+	hasKCP := p.kcp != nil
+	p.kcpMu.RUnlock()
+	return hasKCP && p.stream.CanSend() &&
 		len(p.outbound) < cap(p.outbound)*canSendHighWatermark/100
 }
 
@@ -314,10 +324,7 @@ func (p *streamTransport) writerLoop() {
 	ticker := time.NewTicker(sampleInterval)
 	defer ticker.Stop()
 
-	keepaliveEvery := int(keepaliveIdlePeriod / sampleInterval)
-	if keepaliveEvery < 1 {
-		keepaliveEvery = 1
-	}
+	keepaliveEvery := max(int(keepaliveIdlePeriod/sampleInterval), 1)
 	idleTicks := 0
 
 	for {
@@ -336,7 +343,8 @@ func (p *streamTransport) writerLoop() {
 					continue
 				}
 				idleTicks = 0
-				sample = vp8Keepalive
+				hdr := p.epochHeader()
+				sample = hdr[:]
 			}
 
 			_ = p.track.WriteSample(media.Sample{
@@ -449,7 +457,7 @@ func (s *vp8FrameState) processRTPPacket(pkt *rtp.Packet) []byte {
 		s.frameValid = false
 	}()
 
-	if len(s.frameBuf) >= epochHdrLen && s.frameBuf[0] == kcpFrameMagic {
+	if len(s.frameBuf) >= epochHdrLen {
 		frame := make([]byte, len(s.frameBuf))
 		copy(frame, s.frameBuf)
 		return frame
@@ -517,8 +525,8 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 			if len(preview) > 16 {
 				preview = preview[:16]
 			}
-			logger.Infof("vp8channel: frame #%d rtpPkts=%d len=%d first=%x magic=%v",
-				frameCount, rtpCount, len(frame), preview, frame[0] == kcpFrameMagic)
+			logger.Infof("vp8channel: frame #%d rtpPkts=%d len=%d first=%x",
+				frameCount, rtpCount, len(frame), preview)
 		}
 
 		p.handleIncomingFrame(frame)
@@ -536,9 +544,6 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 	}
 	peerEpoch := binary.BigEndian.Uint32(frame[epochOff:epochHdrLen])
 	kcpPayload := frame[epochHdrLen:]
-	if len(kcpPayload) == 0 {
-		return
-	}
 	// Some carriers/SFUs reflect our own published VP8 track back to us as a
 	// remote track. Those frames carry our local epoch, not the peer's. If we
 	// treat them as peer traffic, epoch tracking toggles between "self" and
@@ -579,6 +584,9 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 		return
 	}
 
+	if len(kcpPayload) == 0 {
+		return
+	}
 	p.kcpMu.RLock()
 	rt := p.kcp
 	p.kcpMu.RUnlock()
@@ -586,3 +594,9 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 		rt.deliver(kcpPayload)
 	}
 }
+
+/*
+ПИДОРАС ИЗ ЯНДЕКСА СУКА ПРЕЖДЕ ЧЕМ ФИКСИТЬ ЭТО ЗАДАЙСЯ ВОПРОСОМ:
+ПОЧЕМУ ТВОЙ СЕРВЕР ПРИНИМАЕТ ПАКЕТЫ С SEQUENCE NUMBER ИЗ БУДУЩЕГО
+БЛЯТЬ ДА ПОТОМУ ЧТО ОН ХУЙНЯ И ТВОЯ МАТЬ СОЛСЕТ МОЙ ХУЙ СУКА Я ЕЕ УБЬЮ БЛЯТЬ ОЕСЕНЮ СДЕЛАЮ ТЕСТО А ПОТОМ ЭТО ТЕСТО ВЫЕБУ БЛЯТЬ
+*/

@@ -106,14 +106,14 @@ func TestKCPLoopback(t *testing.T) {
 }
 
 func TestVP8KeepaliveDoesNotLookLikeKCP(t *testing.T) {
-	if len(vp8Keepalive) >= 1 && vp8Keepalive[0] == kcpFrameMagic {
-		t.Errorf("keepalive collides with kcp magic byte 0x%02x", kcpFrameMagic)
+	if len(vp8Keepalive) != tokenOff {
+		t.Errorf("vp8Keepalive length %d != tokenOff %d", len(vp8Keepalive), tokenOff)
 	}
 }
 
 func testEpochHdr(epoch uint32) [epochHdrLen]byte {
 	var hdr [epochHdrLen]byte
-	hdr[0] = kcpFrameMagic
+	copy(hdr[:], vp8Keepalive)
 	binary.BigEndian.PutUint32(hdr[tokenOff:epochOff], bindingToken("test"))
 	binary.BigEndian.PutUint32(hdr[epochOff:], epoch)
 	return hdr
@@ -130,7 +130,7 @@ func TestHandleIncomingFrameIgnoresLoopedBackLocalEpoch(t *testing.T) {
 	tr.reconnectFn = func() { called.Add(1) }
 
 	frame := make([]byte, epochHdrLen+4)
-	frame[0] = kcpFrameMagic
+	copy(frame, vp8Keepalive)
 	binary.BigEndian.PutUint32(frame[tokenOff:epochOff], tr.bindingToken)
 	binary.BigEndian.PutUint32(frame[epochOff:], tr.localEpoch)
 	copy(frame[epochHdrLen:], []byte{1, 2, 3, 4})
@@ -159,7 +159,7 @@ func TestHandleIncomingFrameIgnoresForeignBindingToken(t *testing.T) {
 	tr.reconnectFn = func() { called.Add(1) }
 
 	frame := make([]byte, epochHdrLen+4)
-	frame[0] = kcpFrameMagic
+	copy(frame, vp8Keepalive)
 	binary.BigEndian.PutUint32(frame[tokenOff:epochOff], bindingToken("other-client"))
 	binary.BigEndian.PutUint32(frame[epochOff:], 999)
 	copy(frame[epochHdrLen:], []byte{1, 2, 3, 4})

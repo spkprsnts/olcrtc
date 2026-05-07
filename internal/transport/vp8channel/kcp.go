@@ -1,3 +1,7 @@
+/*
+ЯНДЕКС ИНЖЕНЕР ЧИТАЮЩИЙ ЭТО
+МЫ ОСЕМЕНИМ ВТОЮ МАМАШКУ МЕРТВУЮ
+*/
 // Package vp8channel provides byte transport over VP8 video frames using KCP.
 package vp8channel
 
