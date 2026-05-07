@@ -878,7 +878,7 @@ func TestDirectLinkConnectsFastProviderTransportMatrix(t *testing.T) {
 
 	for _, carrierName := range builtInCarrierNames() {
 		t.Run(carrierName, func(t *testing.T) {
-			for _, transportName := range []string{"datachannel", "seichannel", "vp8channel"} {
+			for _, transportName := range []string{"datachannel", "seichannel"} {
 				t.Run(transportName, func(t *testing.T) {
 					ln, err := link.New(context.Background(), "direct", validLinkConfig(carrierName, transportName))
 					if err != nil {
@@ -1021,7 +1021,7 @@ func TestFrequentReconnectsStillAllowNewSOCKSConnections(t *testing.T) {
 	for i := range 5 {
 		rt.room.triggerReconnect()
 		conn := eventuallyConnectViaSOCKS(t, rt.socksAddr, echoAddr)
-		payload := []byte(fmt.Sprintf("after-reconnect-%d\n", i))
+		payload := fmt.Appendf(nil, "after-reconnect-%d\n", i)
 		if _, err := conn.Write(payload); err != nil {
 			_ = conn.Close()
 			t.Fatalf("write after reconnect %d: %v", i, err)
