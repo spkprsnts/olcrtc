@@ -55,6 +55,11 @@ func createRoom(ctx context.Context) (*RoomInfo, error) {
 	}, nil
 }
 
+// CreateRoom creates a SaluteJazz room and returns connection details for another peer to join.
+func CreateRoom(ctx context.Context) (*RoomInfo, error) {
+	return createRoom(ctx)
+}
+
 type createResponse struct {
 	RoomID   string `json:"roomId"`
 	Password string `json:"password"`

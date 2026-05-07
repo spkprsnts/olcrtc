@@ -126,6 +126,19 @@ func createRoom(ctx context.Context, accessToken string) (string, error) {
 	return res.RoomID, nil
 }
 
+// CreateRoom registers a temporary guest, creates a WB Stream room, and returns its id.
+func CreateRoom(ctx context.Context, displayName string) (string, error) {
+	accessToken, err := registerGuest(ctx, displayName)
+	if err != nil {
+		return "", fmt.Errorf("register guest: %w", err)
+	}
+	roomID, err := createRoom(ctx, accessToken)
+	if err != nil {
+		return "", fmt.Errorf("create room: %w", err)
+	}
+	return roomID, nil
+}
+
 func joinRoom(ctx context.Context, accessToken, roomID string) error {
 	u := fmt.Sprintf("%s/api-room/api/v1/room/%s/join", apiBase, roomID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader([]byte("{}")))
