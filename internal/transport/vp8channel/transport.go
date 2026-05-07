@@ -474,7 +474,7 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 	for {
 		n, _, err := track.Read(buf)
 		if err != nil {
-			logger.Infof("vp8channel: readVP8Track exit err=%v rtpPkts=%d frames=%d unmarshalErr=%d depackErr=%d",
+			logger.Debugf("vp8channel: readVP8Track exit err=%v rtpPkts=%d frames=%d unmarshalErr=%d depackErr=%d",
 				err, rtpCount, frameCount, unmarshalErr, depackErr)
 			return
 		}
@@ -486,32 +486,15 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 		}
 
 		rtpCount++
-		if rtpCount == 1 || rtpCount == 10 || rtpCount == 100 {
-			logger.Infof("vp8channel: rtp#%d seq=%d marker=%v payloadLen=%d payloadFirst=%x",
-				rtpCount, pkt.SequenceNumber, pkt.Marker, len(pkt.Payload),
-				func() []byte {
-					if len(pkt.Payload) > 8 {
-						return pkt.Payload[:8]
-					}
-					return pkt.Payload
-				}())
-		}
+		logger.Debugf("vp8channel: rtp seq=%d marker=%v payloadLen=%d", pkt.SequenceNumber, pkt.Marker, len(pkt.Payload))
 
 		var vp8Pkt codecs.VP8Packet
 		vp8Payload, derr := vp8Pkt.Unmarshal(pkt.Payload)
 		if derr != nil {
 			depackErr++
-			if depackErr <= 3 {
-				logger.Infof("vp8channel: VP8 depack error #%d: %v payloadFirst=%x", depackErr, derr,
-					func() []byte {
-						if len(pkt.Payload) > 8 {
-							return pkt.Payload[:8]
-						}
-						return pkt.Payload
-					}())
-			}
-		} else if rtpCount <= 3 {
-			logger.Infof("vp8channel: vp8pkt S=%d marker=%v payloadLen=%d", vp8Pkt.S, pkt.Marker, len(vp8Payload))
+			logger.Debugf("vp8channel: VP8 depack error #%d: %v", depackErr, derr)
+		} else {
+			logger.Debugf("vp8channel: vp8pkt S=%d marker=%v payloadLen=%d", vp8Pkt.S, pkt.Marker, len(vp8Payload))
 		}
 
 		frame := state.processRTPPacket(pkt)
@@ -520,14 +503,7 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 		}
 
 		frameCount++
-		if frameCount <= 10 {
-			preview := frame
-			if len(preview) > 16 {
-				preview = preview[:16]
-			}
-			logger.Infof("vp8channel: frame #%d rtpPkts=%d len=%d first=%x",
-				frameCount, rtpCount, len(frame), preview)
-		}
+		logger.Debugf("vp8channel: frame #%d len=%d", frameCount, len(frame))
 
 		p.handleIncomingFrame(frame)
 	}
