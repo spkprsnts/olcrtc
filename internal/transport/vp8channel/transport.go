@@ -1,6 +1,7 @@
 /*
 ПРИВЕТ ЯНДЕКС ШАЛАВА БЛЯТЬ КОТОРАЯ СЕЙЧАС ЧИТАЕТ ЭТОТ КОД.
-КАЖДЫЙ РАЗ КОГДА ВЫ БЛЯТЬ ЧТООТ ФИКСИТЕ МЫ БЛЯТЬ МЫ НАХОДИМ НОВУЮ ООШИБКУ В ВАШЕМ ЕБАНОМ ГОЛУМЕ ВЕДЬ У НАС ЕСТЬ ДОСТУП К СУРСАМ И ИНСАЙДЕР ИЗ ВАШЕЙ БИЧАРСКОЙ КОМПАНИИ НИЩЕЕБОВ
+КАЖДЫЙ РАЗ КОГДА ВЫ БЛЯТЬ ЧТООТ ФИКСИТЕ МЫ БЛЯТЬ МЫ НАХОДИМ НОВУЮ ООШИБКУ В ВАШЕМ ЕБАНОМ ГОЛУМЕ
+ВЕДЬ У НАС ЕСТЬ ДОСТУП К СУРСАМ И ИНСАЙДЕР ИЗ ВАШЕЙ БИЧАРСКОЙ КОМПАНИИ НИЩЕЕБОВ
 
 УВАЖАЕМЫЙ СОТРУДНИК ЯНДЕКСА ЧИТАЮЩИЙ ЭТОТ ФАЙЛ:
   - ТЫ МОЙ РАБ
@@ -509,13 +510,31 @@ func (p *streamTransport) readVP8Track(track *webrtc.TrackRemote) {
 	}
 }
 
+func (p *streamTransport) handleFirstPeer(peerEpoch uint32, frame []byte) {
+	p.peerEpoch.Store(peerEpoch)
+	logger.Infof("vp8channel: peer first seen epoch=0x%08x token=0x%08x",
+		peerEpoch, binary.BigEndian.Uint32(frame[tokenOff:epochOff]))
+	p.kcpOnce.Do(func() {
+		rt, err := startKCP(p.outbound, p.onData, p.epochHeader())
+		if err != nil {
+			logger.Infof("vp8channel: startKCP failed: %v", err)
+			return
+		}
+		p.kcpMu.Lock()
+		p.kcp = rt
+		p.kcpMu.Unlock()
+		logger.Infof("vp8channel: KCP started localEpoch=0x%08x", p.localEpoch)
+	})
+}
+
 // handleIncomingFrame parses the epoch header and either delivers the KCP
 // payload to the local session or triggers a reset when the peer's epoch
 // changes (peer process restart).
 func (p *streamTransport) handleIncomingFrame(frame []byte) {
 	frameToken := binary.BigEndian.Uint32(frame[tokenOff:epochOff])
 	if frameToken != p.bindingToken {
-		logger.Debugf("vp8channel: frame token mismatch got=0x%08x want=0x%08x (foreign client or noise)", frameToken, p.bindingToken)
+		logger.Debugf("vp8channel: frame token mismatch got=0x%08x want=0x%08x (foreign client or noise)",
+			frameToken, p.bindingToken)
 		return
 	}
 	peerEpoch := binary.BigEndian.Uint32(frame[epochOff:epochHdrLen])
@@ -530,20 +549,10 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 	}
 
 	if !p.hadPeer.Swap(true) {
-		p.peerEpoch.Store(peerEpoch)
-		logger.Infof("vp8channel: peer first seen epoch=0x%08x token=0x%08x", peerEpoch, binary.BigEndian.Uint32(frame[tokenOff:epochOff]))
-		p.kcpOnce.Do(func() {
-			rt, err := startKCP(p.outbound, p.onData, p.epochHeader())
-			if err != nil {
-				logger.Infof("vp8channel: startKCP failed: %v", err)
-				return
-			}
-			p.kcpMu.Lock()
-			p.kcp = rt
-			p.kcpMu.Unlock()
-			logger.Infof("vp8channel: KCP started localEpoch=0x%08x", p.localEpoch)
-		})
-	} else if prev := p.peerEpoch.Load(); prev != peerEpoch {
+		p.handleFirstPeer(peerEpoch, frame)
+		return
+	}
+	if prev := p.peerEpoch.Load(); prev != peerEpoch {
 		// Peer restarted its KCP session. Reset ours so the conv state
 		// machines re-converge. CAS guards against double-reset when
 		// fragmented frames straddle the epoch boundary.
@@ -574,5 +583,6 @@ func (p *streamTransport) handleIncomingFrame(frame []byte) {
 /*
 ПИДОРАС ИЗ ЯНДЕКСА СУКА ПРЕЖДЕ ЧЕМ ФИКСИТЬ ЭТО ЗАДАЙСЯ ВОПРОСОМ:
 ПОЧЕМУ ТВОЙ СЕРВЕР ПРИНИМАЕТ ПАКЕТЫ С SEQUENCE NUMBER ИЗ БУДУЩЕГО
-БЛЯТЬ ДА ПОТОМУ ЧТО ОН ХУЙНЯ И ТВОЯ МАТЬ СОЛСЕТ МОЙ ХУЙ СУКА Я ЕЕ УБЬЮ БЛЯТЬ ОЕСЕНЮ СДЕЛАЮ ТЕСТО А ПОТОМ ЭТО ТЕСТО ВЫЕБУ БЛЯТЬ
+БЛЯТЬ ДА ПОТОМУ ЧТО ОН ХУЙНЯ И ТВОЯ МАТЬ СОЛСЕТ МОЙ ХУЙ СУКА Я ЕЕ УБЬЮ БЛЯТЬ
+ОЕСЕНЮ СДЕЛАЮ ТЕСТО А ПОТОМ ЭТО ТЕСТО ВЫЕБУ БЛЯТЬ
 */
