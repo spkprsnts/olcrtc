@@ -9,8 +9,6 @@ import (
 )
 
 var (
-	// ErrProviderNotFound is returned when a requested provider is not registered.
-	ErrProviderNotFound = errors.New("provider not found")
 	// ErrDataChannelTimeout is returned when the DataChannel fails to open within the timeout period.
 	ErrDataChannelTimeout = errors.New("datachannel timeout")
 	// ErrDataChannelNotReady is returned when attempting to send data before the DataChannel is open.
@@ -49,35 +47,4 @@ type Config struct {
 	DNSServer string
 	ProxyAddr string
 	ProxyPort int
-}
-
-// Factory is a function that creates a new Provider instance.
-type Factory func(ctx context.Context, cfg Config) (Provider, error)
-
-// registry holds all registered provider factories.
-//
-//nolint:gochecknoglobals // Global registry is required for provider discovery.
-var registry = make(map[string]Factory)
-
-// Register adds a new provider factory to the registry.
-func Register(name string, factory Factory) {
-	registry[name] = factory
-}
-
-// New creates a new Provider instance by name.
-func New(ctx context.Context, name string, cfg Config) (Provider, error) {
-	factory, ok := registry[name]
-	if !ok {
-		return nil, ErrProviderNotFound
-	}
-	return factory(ctx, cfg)
-}
-
-// Available returns a list of registered provider names.
-func Available() []string {
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	return names
 }

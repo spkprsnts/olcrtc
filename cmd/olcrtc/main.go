@@ -33,7 +33,6 @@ type config struct {
 	carrier         string
 	roomID          string
 	clientID        string
-	provider        string
 	socksPort       int
 	socksHost       string
 	keyHex          string
@@ -140,7 +139,6 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.StringVar(&cfg.carrier, "carrier", "", "Carrier: telemost, jazz, wbstream")
 	fs.StringVar(&cfg.roomID, "id", "", "Room ID")
 	fs.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
-	fs.StringVar(&cfg.provider, "provider", "", "Deprecated alias for -carrier")
 	fs.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
 	fs.StringVar(&cfg.socksHost, "socks-host", "", "SOCKS5 listen host (client only)")
 	fs.StringVar(&cfg.keyHex, "key", "", "Shared encryption key (hex)")
@@ -210,7 +208,7 @@ func toSessionConfig(cfg config) session.Config {
 		Mode:            cfg.mode,
 		Link:            cfg.link,
 		Transport:       cfg.transport,
-		Carrier:         firstNonEmpty(cfg.carrier, cfg.provider),
+		Carrier:         cfg.carrier,
 		RoomID:          cfg.roomID,
 		ClientID:        cfg.clientID,
 		KeyHex:          cfg.keyHex,
@@ -236,15 +234,6 @@ func toSessionConfig(cfg config) session.Config {
 		SEIFragmentSize: cfg.seiFragmentSize,
 		SEIAckTimeoutMS: cfg.seiAckTimeoutMS,
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func waitForShutdown(errCh <-chan error) error {

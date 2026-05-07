@@ -101,7 +101,7 @@ func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("datachannel-fail-create", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return nil, errors.New("boom")
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-fail-create"}); err == nil || err.Error() != "create provider transport: boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-fail-create"}); err == nil || err.Error() != "create carrier transport: boom" {
 		t.Fatalf("New() error = %v", err)
 	}
 

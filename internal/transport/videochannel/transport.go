@@ -76,7 +76,7 @@ type streamTransport struct {
 	idleFrameMu sync.Mutex
 }
 
-// New creates a visual videochannel transport backed by a carrier-specific provider.
+// New creates a visual videochannel transport backed by a carrier.
 func New(ctx context.Context, cfg transport.Config) (transport.Transport, error) {
 	session, err := carrier.New(ctx, cfg.Carrier, carrier.Config{
 		RoomURL:   cfg.RoomURL,
@@ -87,7 +87,7 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		ProxyPort: cfg.ProxyPort,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create provider transport: %w", err)
+		return nil, fmt.Errorf("create carrier transport: %w", err)
 	}
 
 	videoCapable, ok := session.(carrier.VideoTrackCapable)

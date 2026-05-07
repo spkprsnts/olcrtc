@@ -30,14 +30,14 @@ if [ "$#" -gt 0 ]; then
 fi
 
 mode="${OLCRTC_MODE:-srv}"
-room_id="${OLCRTC_ROOM_ID:-${ROOM_ID:-}}"
-carrier="${OLCRTC_CARRIER:-${OLCRTC_PROVIDER:-}}"
+room_id="${OLCRTC_ROOM_ID:-}"
+carrier="${OLCRTC_CARRIER:-}"
 transport="${OLCRTC_TRANSPORT:-}"
 link="${OLCRTC_LINK:-direct}"
 data_dir="${OLCRTC_DATA_DIR:-/usr/share/olcrtc}"
 dns_server="${OLCRTC_DNS:-1.1.1.1:53}"
-key="${OLCRTC_KEY:-${KEY:-}}"
-client_id="${OLCRTC_CLIENT_ID:-${CLIENT_ID:-}}"
+key="${OLCRTC_KEY:-}"
+client_id="${OLCRTC_CLIENT_ID:-}"
 key_file="${OLCRTC_KEY_FILE:-/var/lib/olcrtc/key.hex}"
 socks_proxy="${OLCRTC_SOCKS_PROXY:-}"
 socks_proxy_port="${OLCRTC_SOCKS_PROXY_PORT:-1080}"

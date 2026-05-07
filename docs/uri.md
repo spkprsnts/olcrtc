@@ -30,7 +30,7 @@ olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 
 | Поле | Значение |
 |------|----------|
-| `<Carrier>` | Имя carrier/provider, например `telemost`, `jazz`, `wbstream` |
+| `<Carrier>` | Имя carrier, например `telemost`, `jazz`, `wbstream` |
 | `<Transport>` | Имя транспорта, например `datachannel`, `vp8channel`, `seichannel`, `videochannel` |
 | `<RoomID>` | Идентификатор комнаты или carrier-specific room URL/ID |
 | `<EncryptionKey>` | Ключ шифрования в hex, обычно 64 символа (`32` байта) |

@@ -121,7 +121,7 @@ type Config struct {
 	SEIAckTimeoutMS int
 }
 
-// RegisterDefaults registers built-in providers and transports.
+// RegisterDefaults registers built-in carriers and transports.
 func RegisterDefaults() {
 	builtin.Register()
 	link.Register("direct", direct.New)

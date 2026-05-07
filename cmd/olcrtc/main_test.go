@@ -12,12 +12,12 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 )
 
-func TestToSessionConfigAndFirstNonEmpty(t *testing.T) {
+func TestToSessionConfig(t *testing.T) {
 	cfg := config{
 		mode:            "cnc",
 		link:            "direct",
 		transport:       "vp8channel",
-		provider:        "jazz",
+		carrier:         "jazz",
 		roomID:          "room",
 		clientID:        "client",
 		keyHex:          "key",
@@ -52,18 +52,6 @@ func TestToSessionConfigAndFirstNonEmpty(t *testing.T) {
 		t.Fatalf("toSessionConfig() = %+v", got)
 	}
 
-	cfg.carrier = "telemost"
-	got = toSessionConfig(cfg)
-	if got.Carrier != "telemost" {
-		t.Fatalf("carrier precedence = %q, want telemost", got.Carrier)
-	}
-
-	if got := firstNonEmpty("", "", "x", "y"); got != "x" {
-		t.Fatalf("firstNonEmpty() = %q, want x", got)
-	}
-	if got := firstNonEmpty("", ""); got != "" {
-		t.Fatalf("firstNonEmpty(empty) = %q, want empty", got)
-	}
 }
 
 func TestParseFlagsFrom(t *testing.T) {
@@ -247,22 +235,5 @@ func TestWaitForShutdown(t *testing.T) {
 	errCh <- want
 	if err := waitForShutdown(errCh); !errors.Is(err, want) {
 		t.Fatalf("waitForShutdown(error) = %v, want %v", err, want)
-	}
-}
-
-func TestValidateConfigAliasStillValidates(t *testing.T) {
-	session.RegisterDefaults()
-	cfg := config{
-		mode:       "srv",
-		link:       "direct",
-		transport:  "datachannel",
-		provider:   "jazz",
-		clientID:   "client",
-		keyHex:     "key",
-		dnsServer:  "1.1.1.1:53",
-		videoCodec: "qrcode",
-	}
-	if err := session.Validate(toSessionConfig(cfg)); err != nil {
-		t.Fatalf("Validate(toSessionConfig(alias)) error = %v", err)
 	}
 }

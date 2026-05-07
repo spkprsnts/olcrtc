@@ -4,8 +4,6 @@ package carrier
 import (
 	"context"
 	"errors"
-
-	"github.com/openlibrecommunity/olcrtc/internal/provider"
 )
 
 var (
@@ -57,24 +55,6 @@ var registry = make(map[string]Factory)
 // Register adds a carrier factory to the registry.
 func Register(name string, factory Factory) {
 	registry[name] = factory
-}
-
-// RegisterLegacy adapts an existing provider factory into the carrier registry.
-func RegisterLegacy(name string, factory provider.Factory) {
-	Register(name, func(ctx context.Context, cfg Config) (Session, error) {
-		legacy, err := factory(ctx, provider.Config{
-			RoomURL:   cfg.RoomURL,
-			Name:      cfg.Name,
-			OnData:    cfg.OnData,
-			DNSServer: cfg.DNSServer,
-			ProxyAddr: cfg.ProxyAddr,
-			ProxyPort: cfg.ProxyPort,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &legacySession{provider: legacy}, nil
-	})
 }
 
 // New creates a carrier session by name.
