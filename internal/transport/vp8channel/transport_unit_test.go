@@ -100,8 +100,8 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	if err := tr.Connect(context.Background()); err != nil {
 		t.Fatalf("Connect() error = %v", err)
 	}
-	if tr.kcp == nil || !tr.writerUp.Load() {
-		t.Fatal("Connect() did not initialize kcp/writer")
+	if tr.kcp != nil || !tr.writerUp.Load() {
+		t.Fatal("Connect() should not initialize kcp before peer arrives")
 	}
 	tr.SetReconnectCallback(func() {})
 	tr.SetShouldReconnect(func() bool { return true })
@@ -110,6 +110,18 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	if stream.reconnect == nil || stream.should == nil || stream.ended == nil || !stream.watched {
 		t.Fatal("callbacks/watch were not forwarded")
 	}
+
+	peerEpoch := uint32(0x200)
+	firstFrame := make([]byte, epochHdrLen+4)
+	firstFrame[0] = kcpFrameMagic
+	binary.BigEndian.PutUint32(firstFrame[tokenOff:epochOff], tr.bindingToken)
+	binary.BigEndian.PutUint32(firstFrame[epochOff:epochHdrLen], peerEpoch)
+	copy(firstFrame[epochHdrLen:], []byte("data"))
+	tr.handleIncomingFrame(firstFrame)
+	if tr.kcp == nil {
+		t.Fatal("kcp not initialized after first peer frame")
+	}
+
 	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
