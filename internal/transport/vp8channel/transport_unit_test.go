@@ -20,13 +20,14 @@ type fakeVideoSession struct {
 	err    error
 }
 
-func TestSampleIntervalIsCappedForLargeBatch(t *testing.T) {
+func TestSampleIntervalWithBatch(t *testing.T) {
 	tr := &streamTransport{
 		frameInterval: time.Second / 60,
 		batchSize:     64,
 	}
-	if got := tr.sampleInterval(); got != time.Second/maxWireFPS {
-		t.Fatalf("sampleInterval() = %v, want %v", got, time.Second/maxWireFPS)
+	want := time.Second / 60 / 64
+	if got := tr.sampleInterval(); got != want {
+		t.Fatalf("sampleInterval() = %v, want %v", got, want)
 	}
 
 	tr.batchSize = 1

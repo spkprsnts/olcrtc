@@ -52,7 +52,6 @@ const (
 	outboundQueueSize     = 1024
 	inboundQueueSize      = 1024
 	canSendHighWatermark  = 90 // percent
-	maxWireFPS            = 120
 	keepaliveIdlePeriod   = 100 * time.Millisecond
 )
 
@@ -357,15 +356,10 @@ func (p *streamTransport) writerLoop() {
 }
 
 func (p *streamTransport) sampleInterval() time.Duration {
-	sampleInterval := p.frameInterval
 	if p.batchSize > 1 {
-		sampleInterval = p.frameInterval / time.Duration(p.batchSize)
+		return p.frameInterval / time.Duration(p.batchSize)
 	}
-	minInterval := time.Second / maxWireFPS
-	if sampleInterval < minInterval {
-		return minInterval
-	}
-	return sampleInterval
+	return p.frameInterval
 }
 
 func (p *streamTransport) resetKCP() {
