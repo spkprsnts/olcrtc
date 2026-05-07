@@ -28,9 +28,11 @@ const (
 	defaultSendDelayMax         = 12 * time.Millisecond
 	defaultTelemetryInterval    = 20 * time.Second
 
-	keyUID         = "uid"
-	keyDescription = "description"
-	keyPcSeq       = "pcSeq"
+	keyUID          = "uid"
+	keyDescription  = "description"
+	keyPcSeq        = "pcSeq"
+	keyName         = "name"
+	stateTerminated = "terminated"
 )
 
 var (
@@ -477,14 +479,14 @@ func (p *Peer) sendHello() error {
 		keyUID: uuid.New().String(),
 		"hello": map[string]interface{}{
 			"participantMeta": map[string]interface{}{
-				"name":         p.name,
+				keyName:        p.name,
 				"role":         "SPEAKER",
 				keyDescription: "",
 				"sendAudio":    false,
 				"sendVideo":    p.hasLocalVideoTracks(),
 			},
 			"participantAttributes": map[string]interface{}{
-				"name":         p.name,
+				keyName:        p.name,
 				"role":         "SPEAKER",
 				keyDescription: "",
 			},
@@ -1125,7 +1127,7 @@ func isConferenceEndMessage(msg map[string]interface{}) bool {
 
 func isEndedState(state string) bool {
 	switch strings.ToLower(state) {
-	case "closed", "ended", "finished", "terminated":
+	case "closed", "ended", "finished", stateTerminated:
 		return true
 	default:
 		return false

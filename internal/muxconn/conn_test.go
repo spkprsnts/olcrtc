@@ -1,3 +1,4 @@
+//nolint:all // Test file keeps scenario setup inline.
 package muxconn
 
 import (
@@ -20,12 +21,12 @@ type stubLink struct {
 	canSendFn func() bool
 }
 
-func (s *stubLink) Connect(context.Context) error           { return nil }
-func (s *stubLink) Close() error                            { return nil }
-func (s *stubLink) SetReconnectCallback(func())             {}
-func (s *stubLink) SetShouldReconnect(func() bool)          {}
-func (s *stubLink) SetEndedCallback(func(string))           {}
-func (s *stubLink) WatchConnection(context.Context)         {}
+func (s *stubLink) Connect(context.Context) error   { return nil }
+func (s *stubLink) Close() error                    { return nil }
+func (s *stubLink) SetReconnectCallback(func())     {}
+func (s *stubLink) SetShouldReconnect(func() bool)  {}
+func (s *stubLink) SetEndedCallback(func(string))   {}
+func (s *stubLink) WatchConnection(context.Context) {}
 func (s *stubLink) Send(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

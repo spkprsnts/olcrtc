@@ -1,3 +1,4 @@
+//nolint:all // Test file keeps scenario setup inline.
 package main
 
 import (
@@ -51,7 +52,6 @@ func TestToSessionConfig(t *testing.T) {
 		got.SEIFragmentSize != cfg.seiFragmentSize || got.SEIAckTimeoutMS != cfg.seiAckTimeoutMS {
 		t.Fatalf("toSessionConfig() = %+v", got)
 	}
-
 }
 
 func TestParseFlagsFrom(t *testing.T) {

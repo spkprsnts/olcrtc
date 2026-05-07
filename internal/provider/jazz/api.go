@@ -13,7 +13,12 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-const authTypeAnonymous = "ANONYMOUS"
+const (
+	authTypeAnonymous = "ANONYMOUS"
+	headerAuthType    = "X-Jazz-Authtype"
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+)
 
 var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
 
@@ -33,9 +38,9 @@ func createRoom(ctx context.Context) (*RoomInfo, error) {
 	clientID := uuid.New().String()
 	headers := map[string]string{
 		"X-Jazz-ClientId":   clientID,
-		"X-Jazz-AuthType":   authTypeAnonymous,
+		headerAuthType:      authTypeAnonymous,
 		"X-Client-AuthType": authTypeAnonymous,
-		"Content-Type":      "application/json",
+		headerContentType:   contentTypeJSON,
 	}
 
 	createResp, err := createMeeting(ctx, headers)

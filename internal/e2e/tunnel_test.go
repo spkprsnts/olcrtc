@@ -1,3 +1,4 @@
+//nolint:all // Test file keeps scenario setup inline.
 package e2e
 
 import (

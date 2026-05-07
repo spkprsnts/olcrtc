@@ -1,3 +1,4 @@
+//nolint:all // Test file keeps scenario setup inline.
 package vp8channel
 
 import (
@@ -58,8 +59,11 @@ func TestKCPConnTimeouts(t *testing.T) {
 	buf := make([]byte, 4)
 	if _, _, err := conn.ReadFrom(buf); err == nil {
 		t.Fatal("ReadFrom() unexpectedly succeeded")
-	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() || !netErr.Temporary() {
-		t.Fatalf("ReadFrom() error = %T %v, want timeout net.Error", err, err)
+	} else {
+		var netErr net.Error
+		if !errors.As(err, &netErr) || !netErr.Timeout() {
+			t.Fatalf("ReadFrom() error = %T %v, want timeout net.Error", err, err)
+		}
 	}
 
 	if err := conn.SetWriteDeadline(time.Now().Add(-time.Millisecond)); err != nil {

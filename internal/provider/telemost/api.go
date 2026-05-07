@@ -13,7 +13,8 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-var apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
+//nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
+var apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
 
 var ErrAPI = errors.New("api error") //nolint:revive
 

@@ -48,6 +48,7 @@ const (
 	defaultDNSServer = "1.1.1.1:53"
 	carrierWBStream  = "wbstream"
 	carrierJazz      = "jazz"
+	roomURLAny       = "any"
 )
 
 //nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
@@ -126,8 +127,8 @@ func SetVP8Options(fps, batchSize int) {
 	mu.Lock()
 	defer mu.Unlock()
 	ensureDefaultConfigLocked()
-	defaults.vp8FPS = clamp(fps, 1, 120)
-	defaults.vp8BatchSize = clamp(batchSize, 1, 64)
+	defaults.vp8FPS = clampAtLeastOne(fps, 120)
+	defaults.vp8BatchSize = clampAtLeastOne(batchSize, 64)
 }
 
 // SetDebug enables or disables verbose logging.
@@ -228,8 +229,8 @@ func Check(
 			"",
 			0,
 			0,
-			clamp(vp8FPS, 1, 120),
-			clamp(vp8BatchSize, 1, 64),
+			clampAtLeastOne(vp8FPS, 120),
+			clampAtLeastOne(vp8BatchSize, 64),
 			0,
 			0,
 			0,
@@ -478,7 +479,7 @@ func buildRoomURL(carrierName, roomID string) string {
 		return "https://telemost.yandex.ru/j/" + roomID
 	case carrierJazz:
 		if roomID == "" {
-			return "any"
+			return roomURLAny
 		}
 		return roomID
 	case carrierWBStream:
@@ -488,9 +489,9 @@ func buildRoomURL(carrierName, roomID string) string {
 	}
 }
 
-func clamp(value, minValue, maxValue int) int {
-	if value < minValue {
-		return minValue
+func clampAtLeastOne(value, maxValue int) int {
+	if value < 1 {
+		return 1
 	}
 	if value > maxValue {
 		return maxValue

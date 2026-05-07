@@ -121,11 +121,6 @@ func runWithConfig(cfg config) error {
 	}
 }
 
-func parseFlags() config {
-	cfg, _ := parseFlagsFrom(os.Args[1:], flag.ExitOnError)
-	return cfg
-}
-
 func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, error) {
 	cfg := config{}
 	fs := flag.NewFlagSet("olcrtc", errorHandling)
@@ -167,7 +162,11 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.IntVar(&cfg.seiFragmentSize, "frag", 0, "Fragment size in bytes for fragmented transports (seichannel)")
 	fs.IntVar(&cfg.seiAckTimeoutMS, "ack-ms", 0, "ACK timeout in milliseconds for reliable visual transports (seichannel)")
 
-	return cfg, fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return cfg, fmt.Errorf("parse flags: %w", err)
+	}
+
+	return cfg, nil
 }
 
 func configureLogging(debug bool) {

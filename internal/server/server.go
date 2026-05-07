@@ -21,6 +21,8 @@ import (
 	"github.com/xtaci/smux"
 )
 
+const connectCommand = "connect"
+
 var (
 	// ErrKeyRequired is returned when no encryption key is provided.
 	ErrKeyRequired = errors.New("key required (use -key <hex>)")
@@ -388,7 +390,7 @@ func parseConnectRequest(buf []byte) (ConnectRequest, bool) {
 	if err := json.Unmarshal(buf, &req); err != nil {
 		return req, false
 	}
-	if req.Cmd != "connect" {
+	if req.Cmd != connectCommand {
 		return req, false
 	}
 	return req, true

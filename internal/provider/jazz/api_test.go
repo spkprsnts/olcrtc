@@ -1,3 +1,4 @@
+//nolint:all // Test file keeps scenario setup inline.
 package jazz
 
 import (
@@ -24,7 +25,7 @@ func withJazzAPIServer(t *testing.T, h http.Handler) string {
 
 func TestCreateMeetingAndPreconnect(t *testing.T) {
 	withJazzAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Jazz-AuthType") != authTypeAnonymous {
+		if r.Header.Get(headerAuthType) != authTypeAnonymous {
 			t.Fatalf("missing auth header: %v", r.Header)
 		}
 		switch r.URL.Path {
@@ -44,8 +45,8 @@ func TestCreateMeetingAndPreconnect(t *testing.T) {
 	}))
 
 	headers := map[string]string{
-		"X-Jazz-AuthType": authTypeAnonymous,
-		"Content-Type":    "application/json",
+		headerAuthType: authTypeAnonymous,
+		"Content-Type": "application/json",
 	}
 	created, err := createMeeting(context.Background(), headers)
 	if err != nil {

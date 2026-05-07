@@ -341,7 +341,8 @@ func (p *streamTransport) writerLoop() {
 
 func (p *streamTransport) writeBatch(idle []byte) bool {
 	frameInterval := p.effectiveFrameInterval()
-	for i := 0; i < p.effectiveBatchSize(); i++ {
+	batchSize := p.effectiveBatchSize()
+	for i := range batchSize {
 		payload, ok := p.nextOutboundFrame()
 		if !ok {
 			return false

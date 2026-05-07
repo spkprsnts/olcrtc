@@ -25,6 +25,7 @@ const (
 
 	argCodecVideo = "-c:v"
 	argPixFmt     = "-pix_fmt"
+	codecLibVPX   = "libvpx"
 	pixFmtYUV420P = "yuv420p"
 )
 
@@ -113,14 +114,14 @@ func vp8CodecSpec() codecSpec {
 	return codecSpec{
 		mimeType: webrtc.MimeTypeVP8,
 		fourCC:   "VP80",
-		encoder:  "libvpx",
+		encoder:  codecLibVPX,
 		capability: webrtc.RTPCodecCapability{
 			MimeType:  webrtc.MimeTypeVP8,
 			ClockRate: 90000,
 		},
 		depacketizer: func() rtp.Depacketizer { return &codecs.VP8Packet{} },
 		encodeArgs: []string{
-			argCodecVideo, "libvpx",
+			argCodecVideo, codecLibVPX,
 			"-deadline", "realtime",
 			"-cpu-used", "8",
 			"-error-resilient", "1",
@@ -538,8 +539,8 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 	binary.LittleEndian.PutUint16(header[4:6], 0)
 	binary.LittleEndian.PutUint16(header[6:8], 32)
 	copy(header[8:12], []byte(fourCC))
-	binary.LittleEndian.PutUint16(header[12:14], uint16(width))    //nolint:gosec
-	binary.LittleEndian.PutUint16(header[14:16], uint16(height))   //nolint:gosec
+	binary.LittleEndian.PutUint16(header[12:14], uint16(width))     //nolint:gosec
+	binary.LittleEndian.PutUint16(header[14:16], uint16(height))    //nolint:gosec
 	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate)) //nolint:gosec
 	binary.LittleEndian.PutUint32(header[20:24], 1)
 	binary.LittleEndian.PutUint32(header[24:28], 0)
@@ -567,4 +568,3 @@ func writeAll(w io.Writer, data []byte) error {
 	}
 	return nil
 }
-

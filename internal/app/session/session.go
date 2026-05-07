@@ -20,8 +20,17 @@ import (
 )
 
 const (
-	modeSRV = "srv"
-	modeCNC = "cnc"
+	modeSRV               = "srv"
+	modeCNC               = "cnc"
+	carrierJazz           = "jazz"
+	carrierTelemost       = "telemost"
+	transportVideo        = "videochannel"
+	transportVP8          = "vp8channel"
+	transportSEI          = "seichannel"
+	videoCodecQRCode      = "qrcode"
+	videoCodecTile        = "tile"
+	roomURLAny            = "any"
+	telemostRoomURLPrefix = "https://telemost.yandex.ru/j/"
 )
 
 var (
@@ -198,7 +207,7 @@ func validateTransportRegistration(cfg Config) error {
 }
 
 func validateCommon(cfg Config) error {
-	if cfg.RoomID == "" && cfg.Carrier != "jazz" {
+	if cfg.RoomID == "" && cfg.Carrier != carrierJazz {
 		return ErrRoomIDRequired
 	}
 	if cfg.ClientID == "" {
@@ -215,11 +224,11 @@ func validateCommon(cfg Config) error {
 
 func validateTransportConfig(cfg Config) error {
 	switch cfg.Transport {
-	case "videochannel":
+	case transportVideo:
 		return validateVideoChannel(cfg)
-	case "vp8channel":
+	case transportVP8:
 		return validateVP8Channel(cfg)
-	case "seichannel":
+	case transportSEI:
 		return validateSEIChannel(cfg)
 	default:
 		return nil
@@ -227,10 +236,10 @@ func validateTransportConfig(cfg Config) error {
 }
 
 func validateVideoCodec(cfg Config) error {
-	if cfg.VideoCodec != "" && cfg.VideoCodec != "qrcode" && cfg.VideoCodec != "tile" {
+	if cfg.VideoCodec != "" && cfg.VideoCodec != videoCodecQRCode && cfg.VideoCodec != videoCodecTile {
 		return ErrVideoCodecInvalid
 	}
-	if cfg.VideoCodec == "tile" && (cfg.VideoWidth != 1080 || cfg.VideoHeight != 1080) {
+	if cfg.VideoCodec == videoCodecTile && (cfg.VideoWidth != 1080 || cfg.VideoHeight != 1080) {
 		return ErrTileCodecDimensions
 	}
 	return nil
@@ -371,11 +380,11 @@ func Run(ctx context.Context, cfg Config) error {
 
 func buildRoomURL(carrierName, roomID string) string {
 	switch carrierName {
-	case "telemost":
-		return "https://telemost.yandex.ru/j/" + roomID
-	case "jazz":
+	case carrierTelemost:
+		return telemostRoomURLPrefix + roomID
+	case carrierJazz:
 		if roomID == "" {
-			return "any"
+			return roomURLAny
 		}
 		return roomID
 	case "wbstream":
