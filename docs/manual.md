@@ -19,9 +19,9 @@
 ## Шаг 1: Установить git
 
 ```sh
-apt install git       # Debian / Ubuntu
-pacman -S git         # Arch
-dnf install git       # Fedora / RHEL / CentOS
+apt install git       # Debian   / Ubuntu  / Mint
+pacman -S git         # Arch    / CachyOS / Manjaro
+dnf install git       # Fedora / RHEL   / CentOS
 ```
 
 ---
@@ -31,8 +31,8 @@ dnf install git       # Fedora / RHEL / CentOS
 ### Arch / Fedora (всё просто)
 
 ```sh
-pacman -S go    # Arch
-dnf install go  # Fedora
+pacman -S go    # Arch / CachyOS / Manjaro
+dnf install go  # Fedora / RHEL   / CentOS
 ```
 
 ### Debian / Ubuntu (системный пакет устаревший)
@@ -115,7 +115,7 @@ cd olcrtc
 ## Шаг 5: Собрать
 
 ```sh
-mage build   # текущая платформа → build/olcrtc-linux-amd64
+mage build   # текущая платформа
 mage cross   # все платформы сразу (если собираешь для другой машины)
 ```
 
@@ -145,7 +145,7 @@ openssl rand -hex 32
 
 ## Шаг 7: Придумать client ID
 
-Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение, используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
+Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение.
 
 ```sh
 CLIENT_ID=default
@@ -159,7 +159,7 @@ CLIENT_ID=default
 
 На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
 
-### Пример wbstream + datachannel (максимальная скорость и пинг)
+### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
 ```sh
 ./build/olcrtc-linux-amd64 \
@@ -180,18 +180,17 @@ CLIENT_ID=default
 Wbstream room created: abc123xyz
 ```
 
-Ручками создать румы можно через сайт [wbstream](https://stream.wb.ru)
+Ручками создать румы можно через сайт [wbstream](https://stream.wb.ru).
 
 Этот ID нужно передать клиенту.
-
 
 ### Добавить отладку
 
 Добавь `--debug` к любой команде - увидишь каждое соединение:
 
 ```
-2026/05/03 08:05:23 Connecting link via direct/vp8channel/telemost...
-2026/05/03 08:05:25 telemost publisher state: connected
+2026/05/03 08:05:23 Connecting link via direct/datachannel/wbstream...
+2026/05/03 08:05:25 wbstream publisher state: connected
 2026/05/03 08:05:27 Link connected
 2026/05/03 08:05:43 sid=3 connect icanhazip.com:443
 2026/05/03 08:05:43 sid=3 connected icanhazip.com
@@ -257,3 +256,9 @@ mage lint     # запустить линтер
 mage podman   # собрать образ через podman
 mage docker   # собрать образ через docker
 ```
+
+---
+
+Используешь скрипты вместо ручной сборки? -> [Быстрый старт](fast.md)
+
+Все флаги и матрица совместимости -> [settings.md](settings.md)

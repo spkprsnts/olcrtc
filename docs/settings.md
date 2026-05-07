@@ -7,20 +7,26 @@
 
 </div>
 
+
 # Настройки
 
 ## Матрица совместимости
 
-Сначала выбери что с чем работает:
-
 | Transport | telemost | jazz | wbstream |
 |-----------|:--------:|:----:|:--------:|
-| datachannel | ✗ | ✓ | ✓ |
+| datachannel | ✗ | ⚠️ | ✓ |
 | vp8channel | ✓ | ✓ | ✓ |
 | seichannel | ✗ | ✓ | ✓ |
 | videochannel | ✓ | ✓ | ✓ |
 
-Скорость по убыванию: datachannel > vp8channel > seichannel > videochannel
+**Легенда:**
+- ✓ - работает
+- ✗ - не поддерживается
+- ⚠️ - работает, но не желательно
+
+**Рекомендуемая комбинация: `wbstream + datachannel`** - максимальная скорость, минимальный пинг.
+
+Скорость по убыванию: `datachannel` > `vp8channel` > `seichannel` > `videochannel`
 
 ---
 
@@ -66,6 +72,12 @@
 
 ---
 
+## datachannel
+
+Дополнительных флагов нет - всё по умолчанию.
+
+---
+
 ## vp8channel
 
 **Рекомендуется: `-vp8-fps 60 -vp8-batch 64`** (числа лучше чётные, больший batch = выше скорость)
@@ -74,6 +86,19 @@
 |------|----------|:------------:|
 | `-vp8-fps` | FPS VP8 потока | `25` |
 | `-vp8-batch` | Кадров за тик | `1` |
+
+---
+
+## seichannel
+
+**Рекомендуется: `-fps 60 -batch 64 -frag 900 -ack-ms 2000`**
+
+| Флаг | Описание | По умолчанию |
+|------|----------|:------------:|
+| `-fps` | FPS H264 потока | `60` |
+| `-batch` | Кадров за тик | `64` |
+| `-frag` | Размер фрагмента в байтах | `900` |
+| `-ack-ms` | Таймаут ACK в миллисекундах | `2000` |
 
 ---
 
@@ -98,40 +123,19 @@
 
 ---
 
-## seichannel
-
-**Рекомендуется: `-fps 60 -batch 64 -frag 900 -ack-ms 2000`**
-
-| Флаг | Описание | По умолчанию |
-|------|----------|:------------:|
-| `-fps` | FPS H264 потока | `60` |
-| `-batch` | Кадров за тик | `64` |
-| `-frag` | Размер фрагмента в байтах | `900` |
-| `-ack-ms` | Таймаут ACK в миллисекундах | `2000` |
-
----
-
-## datachannel
-
-Дополнительных флагов нет - всё по умолчанию.
-
----
-
 ## Готовые команды
 
-### telemost + seichannel
+### wbstream + datachannel (рекомендуется - максимальная скорость, без бана)
 
 ```sh
-# сервер
-./olcrtc -mode srv -carrier telemost -transport seichannel \
-  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
-  -fps 60 -batch 64 -frag 900 -ack-ms 2000
+# сервер - room ID создастся сам, смотри логи
+./olcrtc -mode srv -carrier wbstream -transport datachannel \
+  -id any -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53
 
 # клиент
-./olcrtc -mode cnc -carrier telemost -transport seichannel \
-  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
-  -socks-host 127.0.0.1 -socks-port 1080 \
-  -fps 60 -batch 64 -frag 900 -ack-ms 2000
+./olcrtc -mode cnc -carrier wbstream -transport datachannel \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
+  -socks-host 127.0.0.1 -socks-port 1080
 ```
 
 ### telemost + vp8channel
@@ -149,17 +153,19 @@
   -vp8-fps 60 -vp8-batch 64
 ```
 
-### jazz + datachannel (максимальная скорость)
+### telemost + seichannel
 
 ```sh
-# сервер - room ID создастся сам, смотри логи
-./olcrtc -mode srv -carrier jazz -transport datachannel \
-  -id any -client-id <client-id> -key <hex-key> -link direct -data data
+# сервер
+./olcrtc -mode srv -carrier telemost -transport seichannel \
+  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
+  -fps 60 -batch 64 -frag 900 -ack-ms 2000
 
 # клиент
-./olcrtc -mode cnc -carrier jazz -transport datachannel \
+./olcrtc -mode cnc -carrier telemost -transport seichannel \
   -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data \
-  -socks-host 127.0.0.1 -socks-port 1080
+  -socks-host 127.0.0.1 -socks-port 1080 \
+  -fps 60 -batch 64 -frag 900 -ack-ms 2000
 ```
 
 ### telemost + videochannel (крайний случай)
@@ -178,3 +184,9 @@
   -video-codec qrcode -video-w 1080 -video-h 1080 \
   -video-fps 60 -video-bitrate 5000k -video-hw none
 ```
+
+---
+
+Подробнее про запуск: [Быстрый старт](fast.md) · [Мануальная сборка](manual.md)
+
+URI-формат для клиентов: [uri.md](uri.md) · [Формат подписки](sub.md)

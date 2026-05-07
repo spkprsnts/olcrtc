@@ -75,10 +75,10 @@ URI-поля сопоставляются с обычными параметра
 
 ## Примеры
 
-### Полный пример
+### wbstream + datachannel (рекомендуется)
 
 ```text
-olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
+olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
 ```
 
 Разбор:
@@ -86,7 +86,7 @@ olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294
 | Поле | Значение |
 |------|----------|
 | `Carrier` | `wbstream` |
-| `Transport` | `seichannel` |
+| `Transport` | `datachannel` |
 | `RoomID` | `room-01` |
 | `EncryptionKey` | `d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799` |
 | `ClientID` | `android-01` |
@@ -97,7 +97,7 @@ olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294
 ```sh
 ./olcrtc -mode cnc \
   -carrier wbstream \
-  -transport seichannel \
+  -transport datachannel \
   -id room-01 \
   -client-id android-01 \
   -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
@@ -105,8 +105,20 @@ olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294
   -data data
 ```
 
+### wbstream + seichannel (альтернатива)
+
+```text
+olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
+```
+
 ---
 
 ## Короткие алиасы
 
 Как хотите но лично я был бы против.
+
+---
+
+Формат подписки (список серверов): [sub.md](sub.md)
+
+Матрица совместимости carrier + transport: [settings.md](settings.md)

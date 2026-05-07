@@ -22,24 +22,24 @@
 ### git
 
 ```sh
-apt install git    # Debian / Ubuntu
-pacman -S git      # Arch
+apt install git    # Debian / Ubuntu / Mint
+pacman -S git      # Arch / CacheOS / Manjaro
 dnf install git    # Fedora / RHEL / CentOS
 ```
 
 ### podman
 
 ```sh
-apt install podman   # Debian / Ubuntu
-pacman -S podman     # Arch
+apt install podman   # Debian / Ubuntu / Mint
+pacman -S podman     # Arch / CacheOS / Manjaro
 dnf install podman   # Fedora / RHEL / CentOS
 ```
 
 ### curl
 
 ```sh
-apt install curl      # Debian/Ubuntu
-pacman -S curl        # Arch
+apt install curl      # Debian / Ubuntu/ Mint
+pacman -S curl        # Arch / CacheOS / Manjaro
 dnf install curl      # Fedora
 ```
 
@@ -74,7 +74,9 @@ Select carrier:
 Enter choice [1-3, default: 1]:
 ```
 
-Выбери сервис. Смотри матрицу в [settings.md](settings.md) какой transport (способ передачи данных) с каким carrier (сервис) работает.
+Выбери сервис. Полную матрицу совместимости смотри в [settings.md](settings.md).
+
+**Рекомендуется `wbstream`** - работает со всеми транспортами.
 
 ### Transport (как именно передавать данные)
 
@@ -88,10 +90,12 @@ Enter choice [1-4, default: 1]:
 ```
 
 Рекомендации:
-- **datachannel** - работает везде помимо telemost, за него Jazz может забанить ваш IP, быстрый и мелкий пинг.
-- **vp8channel** - работает везде, быстрый но большой пинг.
-- **seichannel** - работает везде, медленный но мелкий пинг.
-- **videochannel** - работает везде, медленный и большой пинг.
+- **datachannel** - самый быстрый, минимальный пинг. Работает с `jazz` и `wbstream`. **Jazz банит IP за datachannel** - лучше используй только с `wbstream`.
+- **vp8channel** - работает везде, быстрый, но большой пинг.
+- **seichannel** - работает везде кроме telemost, медленный, но мелкий пинг.
+- **videochannel** - работает везде, самый медленный и большой пинг.
+
+**Лучшая комбинация: `wbstream + datachannel`** - максимальная скорость, минимальный пинг, без риска бана.
 
 ### Room ID
 
@@ -109,7 +113,7 @@ Enter Room ID:
 Enter Client ID [default: default]:
 ```
 
-Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте, используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
+Это обязательный идентификатор клиента. Он должен быть одинаковым на сервере и клиенте - используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
 
 ### DNS
 
@@ -302,3 +306,9 @@ podman stop olcrtc-client
 ### Перезапустить (просто запусти скрипт снова)
 
 Скрипт сам останавливает старый контейнер перед стартом нового.
+
+---
+
+Хочешь собрать руками без Podman? -> [Мануальная сборка](manual.md)
+
+Все флаги и матрица совместимости -> [settings.md](settings.md)

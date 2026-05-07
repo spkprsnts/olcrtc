@@ -149,12 +149,19 @@ olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294
 ##ip: 203.0.113.10
 ##comment: basic free node
 
-olcrtc://jazz?datachannel@abc123xyz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%android-01$DE / backup / IPv4
+olcrtc://wbstream?datachannel@abc123xyz#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%android-01$DE / backup / IPv4
 ##name: DE-Backup
 ##icon: 🇩🇪
 ##color: #2EBD85
-##comment: reserve route
+##comment: reserve route, wbstream+datachannel - max speed
 ```
 
 ## Имплементация клиента для подписок
-на данный момент - не существует единой реализации, но в скором времени они точно появятся даже в официальном репозитории
+
+На данный момент не существует единой реализации, но в скором времени они точно появятся даже в официальном репозитории.
+
+---
+
+URI-формат для отдельного сервера: [uri.md](uri.md)
+
+Матрица совместимости carrier + transport: [settings.md](settings.md)
