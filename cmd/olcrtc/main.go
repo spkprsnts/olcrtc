@@ -178,6 +178,7 @@ func configureLogging(debug bool) {
 		return
 	}
 	// Suppress noisy LiveKit/pion logs unless debug is enabled.
+	_ = os.Setenv("PION_LOG_DISABLE", "all")
 	lksdk.SetLogger(protoLogger.GetDiscardLogger())
 }
 

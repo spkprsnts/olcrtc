@@ -183,16 +183,23 @@ func TestRunWithArgsSuccessfulSessionReturn(t *testing.T) {
 }
 
 func TestConfigureLogging(t *testing.T) {
+	t.Setenv("PION_LOG_DISABLE", "")
 	logger.SetVerbose(false)
 	configureLogging(true)
 	if !logger.IsVerbose() {
 		t.Fatal("configureLogging(true) did not enable verbose logging")
+	}
+	if got := os.Getenv("PION_LOG_DISABLE"); got != "" {
+		t.Fatalf("configureLogging(true) PION_LOG_DISABLE = %q, want empty", got)
 	}
 
 	logger.SetVerbose(false)
 	configureLogging(false)
 	if logger.IsVerbose() {
 		t.Fatal("configureLogging(false) enabled verbose logging")
+	}
+	if got := os.Getenv("PION_LOG_DISABLE"); got != "all" {
+		t.Fatalf("configureLogging(false) PION_LOG_DISABLE = %q, want all", got)
 	}
 }
 
