@@ -62,7 +62,7 @@ sudo update-alternatives --install /usr/bin/gofmt gofmt /usr/lib/go-1.26/bin/gof
 Иначе через SDK:
 
 ```sh
-apt install golang                          # ставим старый go - он нужен только чтобы скачать новый
+apt install golang                         # ставим старый go - он нужен только чтобы скачать новый
 go install golang.org/dl/go1.26.0@latest   # скачиваем установщик go1.26
 ~/go/bin/go1.26.0 download                 # скачиваем сам go1.26
 mv ~/go/bin/go1.26.0 /usr/local/bin/go     # заменяем системный go
@@ -75,8 +75,6 @@ go version
 # go version go1.26.x linux/amd64
 ```
 
-Если версия меньше 1.26 - смотри инструкцию для Debian выше.
-
 ---
 
 ## Шаг 3: Установить mage
@@ -87,7 +85,7 @@ mage - система сборки для Go-проектов, аналог make
 go install github.com/magefile/mage@latest
 ```
 
-Если после установки `mage: command not found` - добавь `~/go/bin` в PATH:
+Добавь `~/go/bin` в PATH:
 
 ```sh
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.bashrc
@@ -147,13 +145,13 @@ openssl rand -hex 32
 
 ## Шаг 7: Придумать client ID
 
-Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение.
+Это обязательный идентификатор клиента. Он должен совпадать на сервере и клиенте, иначе сервер отклонит соединение, используется чтобы клиент подключался именно к вашему серверу, а не к случайному серверу в руме.
 
 ```sh
 CLIENT_ID=default
 ```
 
-Подойдёт любая короткая строка без пробелов: `home-laptop`, `android-01`, `pc`.
+Подойдёт любая короткая строка без пробелов: `home-laptop`, `android-01`, `archlinux`.
 
 ---
 
@@ -161,26 +159,7 @@ CLIENT_ID=default
 
 На серверной машине (VPS и т.д.). Подбери нужную комбинацию carrier + transport из матрицы в [settings.md](settings.md).
 
-### telemost + vp8channel (работает везде)
-
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode srv \
-  -carrier telemost \
-  -transport vp8channel \
-  -id 75587912855134 \
-  -client-id "$CLIENT_ID" \
-  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -vp8-fps 60 \
-  -vp8-batch 64
-```
-
-Для telemost `-id` - это ID комнаты телемоста. Создай комнату через [telemost.yandex.ru](https://telemost.yandex.ru/) и вставь ID из ссылки.
-
-### wbstream + datachannel (максимальная скорость, не работает в telemost)
+### Пример wbstream + datachannel (максимальная скорость и пинг)
 
 ```sh
 ./build/olcrtc-linux-amd64 \
@@ -195,44 +174,16 @@ CLIENT_ID=default
   -data data
 ```
 
-При `-id any` сервер создаст комнату автоматически и напишет ID в логах:
+При `-id any` сервер создаст комнату автоматически:
 
 ```
 Wbstream room created: abc123xyz
 ```
 
+Ручками создать румы можно через сайт [wbstream](https://stream.wb.ru)
+
 Этот ID нужно передать клиенту.
 
-### telemost + seichannel
-
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode srv \
-  -carrier telemost \
-  -transport seichannel \
-  -id 75587912855134 \
-  -client-id "$CLIENT_ID" \
-  -key <hex-key> \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -fps 20 -batch 1 -frag 900 -ack-ms 3000
-```
-
-### wbstream + datachannel
-
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode srv \
-  -carrier wbstream \
-  -transport datachannel \
-  -id any \
-  -client-id "$CLIENT_ID" \
-  -key <hex-key> \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-```
 
 ### Добавить отладку
 
@@ -250,44 +201,7 @@ Wbstream room created: abc123xyz
 
 ## Шаг 9: Запустить клиент
 
-На своей машине. Carrier, transport, id, `client-id` и key должны **точно совпадать** с сервером.
-
-### telemost + vp8channel
-
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode cnc \
-  -carrier telemost \
-  -transport vp8channel \
-  -id 75587929855134 \
-  -client-id "$CLIENT_ID" \
-  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -socks-host 127.0.0.1 \
-  -socks-port 1080 \
-  -vp8-fps 60 \
-  -vp8-batch 64
-```
-
-### telemost + seichannel
-
-```sh
-./build/olcrtc-linux-amd64 \
-  -mode cnc \
-  -carrier telemost \
-  -transport seichannel \
-  -id 75587912855134 \
-  -client-id "$CLIENT_ID" \
-  -key <hex-key> \
-  -link direct \
-  -dns 1.1.1.1:53 \
-  -data data \
-  -socks-host 127.0.0.1 \
-  -socks-port 1080 \
-  -fps 20 -batch 1 -frag 900 -ack-ms 3000
-```
+На своей машине. Carrier, transport, id, `client-id` и key должны совпадать с сервером.
 
 ### wbstream + datachannel
 
