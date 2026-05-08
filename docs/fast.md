@@ -105,7 +105,7 @@ Enter Room ID:
 
 Для **telemost** - создай руму через сайт [телемоста](https://telemost.yandex.ru/) и вставь его.
 
-Для **jazz** и **wbstream** можно нажать Enter - ID сгенерируется автоматически, или создать румы через сайт [jazz](https://salutejazz.ru/calls/create) или [wbstream](https://stream.wb.ru).
+Для **jazz** и **wbstream** скрипт предложит выбор: сгенерировать автоматически (рекомендуется) или ввести существующий ID. При автогенерации скрипт запустит `gen` и получит ID до старта сервера. Также можно создать руму через сайт [jazz](https://salutejazz.ru/calls/create) или [wbstream](https://stream.wb.ru).
 
 ### Client ID
 

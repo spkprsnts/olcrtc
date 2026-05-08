@@ -34,10 +34,10 @@
 
 | Флаг | Что вводить |
 |------|-------------|
-| `-mode` | `srv` на сервере, `cnc` на клиенте |
+| `-mode` | `srv` на сервере, `cnc` на клиенте, `gen` для генерации Room ID |
 | `-carrier` | `telemost`, `jazz` или `wbstream` |
 | `-transport` | `datachannel`, `vp8channel`, `seichannel` или `videochannel` |
-| `-id` | Room ID. Для jazz/wbstream можно `any` - сгенерируется автоматически |
+| `-id` | Room ID |
 | `-client-id` | Общий идентификатор клиента. Должен совпадать на сервере и клиенте |
 | `-key` | Ключ шифрования hex 64 символа. Генерация: `openssl rand -hex 32` |
 | `-link` | Всегда `direct` |
@@ -51,6 +51,30 @@
 | Флаг | Описание |
 |------|----------|
 | `--debug` | Подробные логи соединений |
+
+---
+
+## -mode gen
+
+Генерирует Room ID заранее, не запуская сервер. Поддерживается для `jazz` и `wbstream`.
+
+**Обязательные флаги:**
+
+| Флаг | Описание |
+|------|----------|
+| `-carrier` | `jazz` или `wbstream` |
+| `-dns` | DNS-сервер |
+| `-amount` | Количество комнат |
+
+```sh
+./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1
+# abc123xyz
+
+./olcrtc -mode gen -carrier jazz -dns 1.1.1.1:53 -amount 3
+# room-id-1
+# room-id-2
+# room-id-3
+```
 
 ---
 
@@ -128,13 +152,16 @@
 ### wbstream + datachannel (рекомендуется - максимальная скорость, без бана)
 
 ```sh
-# сервер - room ID создастся сам, смотри логи
+# сгенерировать room ID
+ROOM_ID=$(./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
+
+# сервер
 ./olcrtc -mode srv -carrier wbstream -transport datachannel \
-  -id any -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53
+  -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53
 
 # клиент
 ./olcrtc -mode cnc -carrier wbstream -transport datachannel \
-  -id <room-id> -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
+  -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
   -socks-host 127.0.0.1 -socks-port 1080
 ```
 

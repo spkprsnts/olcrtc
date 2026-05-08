@@ -161,12 +161,23 @@ CLIENT_ID=default
 
 ### wbstream + datachannel (рекомендуется - максимальная скорость и пинг)
 
+Сначала сгенерируй Room ID:
+
+```sh
+ROOM_ID=$(./build/olcrtc-linux-amd64 -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data data)
+echo "Room ID: $ROOM_ID"
+```
+
+Или создай руму вручную через сайт [wbstream](https://stream.wb.ru).
+
+Затем запусти сервер:
+
 ```sh
 ./build/olcrtc-linux-amd64 \
   -mode srv \
   -carrier wbstream \
   -transport datachannel \
-  -id any \
+  -id "$ROOM_ID" \
   -client-id "$CLIENT_ID" \
   -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
   -link direct \
@@ -174,15 +185,7 @@ CLIENT_ID=default
   -data data
 ```
 
-При `-id any` сервер создаст комнату автоматически:
-
-```
-Wbstream room created: abc123xyz
-```
-
-Ручками создать румы можно через сайт [wbstream](https://stream.wb.ru).
-
-Этот ID нужно передать клиенту.
+Room ID нужно передать клиенту.
 
 ### Добавить отладку
 
