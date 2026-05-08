@@ -20,6 +20,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 )
 
+const modeGen = "gen"
 
 // ErrDataDirRequired is returned when no data directory is specified.
 var ErrDataDirRequired = errors.New("data directory required (use -data data)")
@@ -28,7 +29,7 @@ var ErrDataDirRequired = errors.New("data directory required (use -data data)")
 var runSession = session.Run
 
 //nolint:gochecknoglobals // Tests replace gen runner with a stub.
-var runGen func(config) error = execGen
+var runGen = execGen
 
 type config struct {
 	mode            string
@@ -88,8 +89,8 @@ func runWithArgs(args []string) error {
 func runWithConfig(cfg config) error {
 	configureLogging(cfg.debug)
 
-	if cfg.mode == "gen" {
-		return runGen(cfg) //nolint:wrapcheck
+	if cfg.mode == modeGen {
+		return runGen(cfg)
 	}
 
 	if err := session.Validate(toSessionConfig(cfg)); err != nil {
@@ -144,7 +145,7 @@ func execGen(cfg config) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- session.Gen(ctx, scfg, func(id string) { fmt.Println(id) })
+		errCh <- session.Gen(ctx, scfg, func(id string) { _, _ = fmt.Fprintln(os.Stdout, id) })
 	}()
 
 	select {
