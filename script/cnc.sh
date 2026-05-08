@@ -112,11 +112,7 @@ esac
 echo "[*] Using transport: $TRANSPORT"
 echo ""
 
-if [ "$CARRIER" = "jazz" ]; then
-    read -p "Enter Room ID (format: roomId:password from server): " ROOM_ID
-else
-    read -p "Enter Room ID: " ROOM_ID
-fi
+read -p "Enter Room ID: " ROOM_ID
 
 if [ -z "$ROOM_ID" ]; then
     echo "[X] Room ID cannot be empty"

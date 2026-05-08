@@ -59,8 +59,21 @@ vp8_batch="${OLCRTC_VP8_BATCH:-0}"
 [ "$mode" = "srv" ] || die "server image defaults to OLCRTC_MODE=srv; got '$mode'"
 [ -n "$carrier" ] || die "set OLCRTC_CARRIER (e.g. telemost, jazz, wbstream)"
 [ -n "$transport" ] || die "set OLCRTC_TRANSPORT (e.g. datachannel, videochannel, seichannel, vp8channel)"
-[ -n "$room_id" ] || die "set OLCRTC_ROOM_ID to the room identifier"
 [ -n "$client_id" ] || die "set OLCRTC_CLIENT_ID to bind the expected client"
+
+if [ -z "$room_id" ]; then
+    case "$carrier" in
+        jazz|wbstream)
+            echo "olcrtc-entrypoint: OLCRTC_ROOM_ID not set, generating room via -mode gen..." >&2
+            room_id=$(/usr/local/bin/olcrtc -mode gen -carrier "$carrier" -dns "$dns_server" -amount 1 -data "$data_dir")
+            [ -n "$room_id" ] || die "room generation failed for carrier '$carrier'"
+            echo "olcrtc-entrypoint: generated room ID: $room_id" >&2
+            ;;
+        *)
+            die "set OLCRTC_ROOM_ID to the room identifier"
+            ;;
+    esac
+fi
 
 if [ -z "$key" ]; then
     if [ -s "$key_file" ]; then
