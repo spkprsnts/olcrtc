@@ -5,12 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/link"
 	"github.com/openlibrecommunity/olcrtc/internal/link/direct"
+	"github.com/openlibrecommunity/olcrtc/internal/names"
+	"github.com/openlibrecommunity/olcrtc/internal/provider/jazz"
+	"github.com/openlibrecommunity/olcrtc/internal/provider/wbstream"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
@@ -22,8 +26,10 @@ import (
 const (
 	modeSRV               = "srv"
 	modeCNC               = "cnc"
+	modeGen               = "gen"
 	carrierJazz           = "jazz"
 	carrierTelemost       = "telemost"
+	carrierWBStream       = "wbstream"
 	transportVideo        = "videochannel"
 	transportVP8          = "vp8channel"
 	transportSEI          = "seichannel"
@@ -37,7 +43,9 @@ var (
 	// ErrRoomIDRequired indicates that a room id is required for the selected carrier.
 	ErrRoomIDRequired = errors.New("room ID required (use -id <id>)")
 	// ErrModeRequired indicates that mode is not one of the supported values.
-	ErrModeRequired = errors.New("mode required (use -mode srv or -mode cnc)")
+	ErrModeRequired = errors.New("mode required (use -mode srv, -mode cnc or -mode gen)")
+	// ErrAmountRequired indicates that -amount is required for gen mode.
+	ErrAmountRequired = errors.New("amount required for gen mode (use -amount <n>)")
 	// ErrCarrierRequired indicates that no carrier was selected.
 	ErrCarrierRequired = errors.New(
 		"carrier required (use -carrier telemost, -carrier jazz or -carrier wbstream)")
@@ -128,6 +136,7 @@ type Config struct {
 	SEIBatchSize    int
 	SEIFragmentSize int
 	SEIAckTimeoutMS int
+	Amount          int
 }
 
 // RegisterDefaults registers built-in carriers and transports.
@@ -164,46 +173,42 @@ func Validate(cfg Config) error {
 }
 
 func validateMode(cfg Config) error {
-	if cfg.Mode == "" || (cfg.Mode != modeSRV && cfg.Mode != modeCNC) {
+	switch cfg.Mode {
+	case modeSRV, modeCNC, modeGen:
+		return nil
+	default:
 		return ErrModeRequired
 	}
-	return nil
 }
 
 func validateCarrier(cfg Config) error {
 	if cfg.Carrier == "" {
 		return ErrCarrierRequired
 	}
-	for _, c := range carrier.Available() {
-		if cfg.Carrier == c {
-			return nil
-		}
+	if !slices.Contains(carrier.Available(), cfg.Carrier) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Carrier, carrier.Available())
 	}
-	return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Carrier, carrier.Available())
+	return nil
 }
 
 func validateLink(cfg Config) error {
 	if cfg.Link == "" {
 		return ErrLinkRequired
 	}
-	for _, l := range link.Available() {
-		if cfg.Link == l {
-			return nil
-		}
+	if !slices.Contains(link.Available(), cfg.Link) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedLink, cfg.Link, link.Available())
 	}
-	return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedLink, cfg.Link, link.Available())
+	return nil
 }
 
 func validateTransportRegistration(cfg Config) error {
 	if cfg.Transport == "" {
 		return ErrTransportRequired
 	}
-	for _, t := range transport.Available() {
-		if cfg.Transport == t {
-			return nil
-		}
+	if !slices.Contains(transport.Available(), cfg.Transport) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedTransport, cfg.Transport, transport.Available())
 	}
-	return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedTransport, cfg.Transport, transport.Available())
+	return nil
 }
 
 func validateCommon(cfg Config) error {
@@ -387,9 +392,51 @@ func buildRoomURL(carrierName, roomID string) string {
 			return roomURLAny
 		}
 		return roomID
-	case "wbstream":
+	case carrierWBStream:
 		return roomID
 	default:
 		return roomID
 	}
+}
+
+// ValidateGen validates that the config contains enough fields to run gen mode.
+func ValidateGen(cfg Config) error {
+	if cfg.Carrier == "" {
+		return ErrCarrierRequired
+	}
+	if !slices.Contains(carrier.Available(), cfg.Carrier) {
+		return fmt.Errorf("%w: %s (available: %v)", ErrUnsupportedCarrier, cfg.Carrier, carrier.Available())
+	}
+	if cfg.DNSServer == "" {
+		return ErrDNSServerRequired
+	}
+	if cfg.Amount < 1 {
+		return ErrAmountRequired
+	}
+	return nil
+}
+
+// Gen creates cfg.Amount rooms for the configured carrier and writes each room ID to out.
+func Gen(ctx context.Context, cfg Config, out func(string)) error {
+	switch cfg.Carrier {
+	case carrierJazz:
+		for i := range cfg.Amount {
+			info, err := jazz.CreateRoom(ctx)
+			if err != nil {
+				return fmt.Errorf("gen jazz room %d: %w", i+1, err)
+			}
+			out(info.RoomID)
+		}
+	case carrierWBStream:
+		for i := range cfg.Amount {
+			roomID, err := wbstream.CreateRoom(ctx, names.Generate())
+			if err != nil {
+				return fmt.Errorf("gen wbstream room %d: %w", i+1, err)
+			}
+			out(roomID)
+		}
+	default:
+		return fmt.Errorf("%w: %s does not support room generation", ErrUnsupportedCarrier, cfg.Carrier)
+	}
+	return nil
 }

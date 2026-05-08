@@ -103,32 +103,15 @@ esac
 echo "[*] Using transport: $TRANSPORT"
 echo ""
 
-if [ "$CARRIER" = "jazz" ]; then
-    echo "Jazz room options:"
-    echo "  1) Auto-generate new room (recommended)"
-    echo "  2) Use specific room ID (enter roomId:password)"
-    read -p "Enter choice [1-2, default: 1]: " JAZZ_CHOICE
+GEN_ROOM=0
 
-    case "$JAZZ_CHOICE" in
-        2)
-            read -p "Enter Room ID (format: roomId:password): " ROOM_ID
-            if [ -z "$ROOM_ID" ]; then
-                echo "[X] Room ID cannot be empty"
-                exit 1
-            fi
-            ;;
-        *)
-            ROOM_ID="any"
-            echo "[*] Will auto-generate Jazz room"
-            ;;
-    esac
-elif [ "$CARRIER" = "wbstream" ]; then
-    echo "WB Stream room options:"
+if [ "$CARRIER" = "jazz" ] || [ "$CARRIER" = "wbstream" ]; then
+    echo "Room options:"
     echo "  1) Auto-generate new room (recommended)"
     echo "  2) Use specific room ID"
-    read -p "Enter choice [1-2, default: 1]: " WB_CHOICE
+    read -p "Enter choice [1-2, default: 1]: " ROOM_CHOICE
 
-    case "$WB_CHOICE" in
+    case "$ROOM_CHOICE" in
         2)
             read -p "Enter Room ID: " ROOM_ID
             if [ -z "$ROOM_ID" ]; then
@@ -137,8 +120,9 @@ elif [ "$CARRIER" = "wbstream" ]; then
             fi
             ;;
         *)
-            ROOM_ID="any"
-            echo "[*] Will auto-generate WB Stream room"
+            GEN_ROOM=1
+            ROOM_ID=""
+            echo "[*] Will generate room before starting server"
             ;;
     esac
 else
@@ -294,6 +278,20 @@ if [ ! -f "$WORK_DIR/olcrtc" ]; then
     exit 1
 fi
 
+if [ "$GEN_ROOM" = "1" ]; then
+    echo "[*] Generating room via -mode gen..."
+    ROOM_ID=$(podman run --rm \
+        -v $WORK_DIR:/app:Z \
+        -w /app \
+        $IMAGE_NAME \
+        ./olcrtc -mode gen -carrier "$CARRIER" -dns "$DNS" -amount 1 -data data)
+    if [ -z "$ROOM_ID" ]; then
+        echo "[X] Room generation failed"
+        exit 1
+    fi
+    echo "[+] Generated room ID: $ROOM_ID"
+fi
+
 KEY_FILE="$HOME/.olcrtc_key"
 
 if [ -f "$KEY_FILE" ]; then
@@ -323,47 +321,13 @@ podman run -d \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
-sleep 3
-
-ACTUAL_ROOM_ID="$ROOM_ID"
-
-if [ "$CARRIER" = "jazz" ] && [ "$ROOM_ID" = "any" ]; then
-    echo "[*] Waiting for Jazz room creation..."
-    sleep 2
-    LOGS=$(podman logs $CONTAINER_NAME 2>&1)
-    ACTUAL_ROOM_ID=$(echo "$LOGS" | grep -oP 'Jazz room created: \K[^\s]+' | head -1)
-
-    if [ -z "$ACTUAL_ROOM_ID" ]; then
-        echo "[!] WARNING: Could not extract Jazz room ID from logs"
-        echo "[*] Full logs:"
-        podman logs $CONTAINER_NAME
-        ACTUAL_ROOM_ID="(check logs above)"
-    else
-        echo "[+] Jazz room created: $ACTUAL_ROOM_ID"
-    fi
-elif [ "$CARRIER" = "wbstream" ] && [ "$ROOM_ID" = "any" ]; then
-    echo "[*] Waiting for WB Stream room creation..."
-    sleep 2
-    LOGS=$(podman logs $CONTAINER_NAME 2>&1)
-    ACTUAL_ROOM_ID=$(echo "$LOGS" | grep -oP 'WB Stream room created: \K[^\s]+' | head -1)
-
-    if [ -z "$ACTUAL_ROOM_ID" ]; then
-        echo "[!] WARNING: Could not extract WB Stream room ID from logs"
-        echo "[*] Full logs:"
-        podman logs $CONTAINER_NAME
-        ACTUAL_ROOM_ID="(check logs above)"
-    else
-        echo "[+] WB Stream room created: $ACTUAL_ROOM_ID"
-    fi
-fi
-
 echo ""
 echo "[+] Server started successfully!"
 echo ""
 echo "Container name: $CONTAINER_NAME"
 echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
-echo "Room ID:        $ACTUAL_ROOM_ID"
+echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
 echo "Encryption key: $KEY"
 
@@ -379,7 +343,7 @@ echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ACTUAL_ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
+echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
 echo ""
 echo -n "    -link direct -transport \"$TRANSPORT\" -dns 1.1.1.1:53 -data data \\"
 echo ""

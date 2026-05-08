@@ -43,13 +43,15 @@ func TestToSessionConfig(t *testing.T) {
 		seiBatchSize:    3,
 		seiFragmentSize: 512,
 		seiAckTimeoutMS: 1500,
+		amount:          5,
 	}
 
 	got := toSessionConfig(cfg)
 	if got.Mode != cfg.mode || got.Carrier != "jazz" || got.SOCKSPort != cfg.socksPort ||
 		got.VideoTileRS != cfg.videoTileRS || got.VP8BatchSize != cfg.vp8BatchSize ||
 		got.SEIFPS != cfg.seiFPS || got.SEIBatchSize != cfg.seiBatchSize ||
-		got.SEIFragmentSize != cfg.seiFragmentSize || got.SEIAckTimeoutMS != cfg.seiAckTimeoutMS {
+		got.SEIFragmentSize != cfg.seiFragmentSize || got.SEIAckTimeoutMS != cfg.seiAckTimeoutMS ||
+		got.Amount != cfg.amount {
 		t.Fatalf("toSessionConfig() = %+v", got)
 	}
 }
@@ -86,6 +88,7 @@ func TestParseFlagsFrom(t *testing.T) {
 		"-batch", "4",
 		"-frag", "512",
 		"-ack-ms", "1500",
+		"-amount", "7",
 	}, flag.ContinueOnError)
 	if err != nil {
 		t.Fatalf("parseFlagsFrom() error = %v", err)
@@ -93,13 +96,49 @@ func TestParseFlagsFrom(t *testing.T) {
 	if cfg.mode != "srv" || cfg.carrier != "telemost" || cfg.roomID != "room" ||
 		cfg.debug != true || cfg.videoCodec != "tile" || cfg.videoTileRS != 40 ||
 		cfg.vp8FPS != 24 || cfg.vp8BatchSize != 3 || cfg.seiFPS != 40 ||
-		cfg.seiBatchSize != 4 || cfg.seiFragmentSize != 512 || cfg.seiAckTimeoutMS != 1500 {
+		cfg.seiBatchSize != 4 || cfg.seiFragmentSize != 512 || cfg.seiAckTimeoutMS != 1500 ||
+		cfg.amount != 7 {
 		t.Fatalf("parseFlagsFrom() = %+v", cfg)
 	}
 
 	_, err = parseFlagsFrom([]string{"-bad"}, flag.ContinueOnError)
 	if err == nil {
 		t.Fatal("parseFlagsFrom(bad flag) error = nil")
+	}
+}
+
+func TestRunGenModeValidationErrors(t *testing.T) {
+	session.RegisterDefaults()
+
+	if err := runWithConfig(config{mode: "gen"}); err == nil {
+		t.Fatal("runWithConfig(gen, no carrier) error = nil")
+	}
+
+	if err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53"}); err == nil {
+		t.Fatal("runWithConfig(gen, amount=0) error = nil")
+	}
+}
+
+func TestRunGenModeCallsGen(t *testing.T) {
+	session.RegisterDefaults()
+
+	var collected []string
+	oldRunGen := runGen
+	t.Cleanup(func() { runGen = oldRunGen })
+	runGen = func(cfg config) error {
+		if cfg.carrier != "wbstream" || cfg.dnsServer != "1.1.1.1:53" || cfg.amount != 3 {
+			t.Fatalf("runGen cfg = %+v", cfg)
+		}
+		collected = append(collected, "ok")
+		return nil
+	}
+
+	err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53", amount: 3})
+	if err != nil {
+		t.Fatalf("runWithConfig(gen) error = %v", err)
+	}
+	if len(collected) != 1 {
+		t.Fatalf("runGen called %d times, want 1", len(collected))
 	}
 }
 

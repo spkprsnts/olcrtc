@@ -2,6 +2,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -354,5 +355,73 @@ func TestBuildRoomURL(t *testing.T) {
 		if got := buildRoomURL(tt.carrier, tt.roomID); got != tt.want {
 			t.Fatalf("buildRoomURL(%q, %q) = %q, want %q", tt.carrier, tt.roomID, got, tt.want)
 		}
+	}
+}
+
+func TestValidateGen(t *testing.T) {
+	RegisterDefaults()
+
+	tests := []struct {
+		name string
+		cfg  Config
+		want error
+	}{
+		{
+			name: "valid wbstream",
+			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: 3},
+		},
+		{
+			name: "valid jazz",
+			cfg:  Config{Carrier: "jazz", DNSServer: "1.1.1.1:53", Amount: 1},
+		},
+		{
+			name: "missing carrier",
+			cfg:  Config{DNSServer: "1.1.1.1:53", Amount: 1},
+			want: ErrCarrierRequired,
+		},
+		{
+			name: "unsupported carrier",
+			cfg:  Config{Carrier: "unknown", DNSServer: "1.1.1.1:53", Amount: 1},
+			want: ErrUnsupportedCarrier,
+		},
+		{
+			name: "missing dns",
+			cfg:  Config{Carrier: "wbstream", Amount: 1},
+			want: ErrDNSServerRequired,
+		},
+		{
+			name: "amount zero",
+			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: 0},
+			want: ErrAmountRequired,
+		},
+		{
+			name: "amount negative",
+			cfg:  Config{Carrier: "wbstream", DNSServer: "1.1.1.1:53", Amount: -1},
+			want: ErrAmountRequired,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGen(tt.cfg)
+			if tt.want == nil {
+				if err != nil {
+					t.Fatalf("ValidateGen() error = %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("ValidateGen() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenUnsupportedCarrier(t *testing.T) {
+	RegisterDefaults()
+	cfg := Config{Carrier: "telemost", DNSServer: "1.1.1.1:53", Amount: 1}
+	err := Gen(context.Background(), cfg, func(string) {})
+	if !errors.Is(err, ErrUnsupportedCarrier) {
+		t.Fatalf("Gen(telemost) error = %v, want ErrUnsupportedCarrier", err)
 	}
 }

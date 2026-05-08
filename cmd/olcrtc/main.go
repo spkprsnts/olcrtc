@@ -20,11 +20,15 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 )
 
+
 // ErrDataDirRequired is returned when no data directory is specified.
 var ErrDataDirRequired = errors.New("data directory required (use -data data)")
 
 //nolint:gochecknoglobals // Tests replace the long-running session runner with a bounded function.
 var runSession = session.Run
+
+//nolint:gochecknoglobals // Tests replace gen runner with a stub.
+var runGen func(config) error = execGen
 
 type config struct {
 	mode            string
@@ -57,6 +61,7 @@ type config struct {
 	seiBatchSize    int
 	seiFragmentSize int
 	seiAckTimeoutMS int
+	amount          int
 }
 
 func main() {
@@ -82,6 +87,10 @@ func runWithArgs(args []string) error {
 
 func runWithConfig(cfg config) error {
 	configureLogging(cfg.debug)
+
+	if cfg.mode == "gen" {
+		return runGen(cfg) //nolint:wrapcheck
+	}
 
 	if err := session.Validate(toSessionConfig(cfg)); err != nil {
 		return fmt.Errorf("validate config: %w", err)
@@ -114,6 +123,32 @@ func runWithConfig(cfg config) error {
 	select {
 	case <-sigCh:
 		logger.Info("Shutting down gracefully...")
+		cancel()
+		return waitForShutdown(errCh)
+	case err := <-errCh:
+		return err
+	}
+}
+
+func execGen(cfg config) error {
+	scfg := toSessionConfig(cfg)
+	if err := session.ValidateGen(scfg); err != nil {
+		return fmt.Errorf("validate gen config: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- session.Gen(ctx, scfg, func(id string) { fmt.Println(id) })
+	}()
+
+	select {
+	case <-sigCh:
 		cancel()
 		return waitForShutdown(errCh)
 	case err := <-errCh:
@@ -161,6 +196,7 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.IntVar(&cfg.seiBatchSize, "batch", 0, "Transport frames per tick for batched transports (seichannel)")
 	fs.IntVar(&cfg.seiFragmentSize, "frag", 0, "Fragment size in bytes for fragmented transports (seichannel)")
 	fs.IntVar(&cfg.seiAckTimeoutMS, "ack-ms", 0, "ACK timeout in milliseconds for reliable visual transports (seichannel)")
+	fs.IntVar(&cfg.amount, "amount", 0, "Number of rooms to generate (gen mode only)")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, fmt.Errorf("parse flags: %w", err)
@@ -232,6 +268,7 @@ func toSessionConfig(cfg config) session.Config {
 		SEIBatchSize:    cfg.seiBatchSize,
 		SEIFragmentSize: cfg.seiFragmentSize,
 		SEIAckTimeoutMS: cfg.seiAckTimeoutMS,
+		Amount:          cfg.amount,
 	}
 }
 
