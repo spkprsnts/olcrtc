@@ -93,6 +93,7 @@ olcrtc://...
 
 ```text
 olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Carrier>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 ```
 
 Одна строка = один сервер/одна запись подписки.
@@ -140,7 +141,7 @@ olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 #used: 10mb/10gb
 #available: 9.99gb
 
-olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olcng free sub / IPv6
+olcrtc://wbstream?seichannel<fps=60&batch=64&frag=900&ack-ms=2000>@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olcng free sub / IPv6
 ##name: RU-1
 ##icon: 🇷🇺
 ##color: #4A90E2

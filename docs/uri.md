@@ -20,9 +20,12 @@
 
 ```text
 olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
+olcrtc://<Carrier>?<Transport><key=value&key=value>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 ```
 
 Все поля после `olcrtc://` считаются частью клиентского соглашения.
+
+Блок `<key=value&...>` — payload параметров транспорта в угловых скобках, идёт сразу после имени транспорта. Если параметры транспорту не нужны или используются defaults — блок опускается целиком.
 
 ---
 
@@ -32,6 +35,7 @@ olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 |------|----------|
 | `<Carrier>` | Имя carrier, например `telemost`, `jazz`, `wbstream` |
 | `<Transport>` | Имя транспорта, например `datachannel`, `vp8channel`, `seichannel`, `videochannel` |
+| payload | Параметры транспорта в `<key=value&...>`. Ключи совпадают с CLI-флагами без дефиса. Блок опускается если используются defaults |
 | `<RoomID>` | Идентификатор комнаты или carrier-specific room URL/ID |
 | `<EncryptionKey>` | Ключ шифрования в hex, обычно 64 символа (`32` байта) |
 | `<ClientID>` | Идентификатор клиента. Должен совпадать с ожидаемым значением на сервере |
@@ -39,14 +43,52 @@ olcrtc://<Carrier>?<Transport>@<RoomID>#<EncryptionKey>%<ClientID>$<MIMO>
 
 ---
 
-## Соответствие параметрам olcrtc
+## Параметры payload по транспортам
 
-URI-поля сопоставляются с обычными параметрами так:
+### datachannel
+
+Payload не используется.
+
+### vp8channel
+
+| Ключ | CLI-флаг | Описание |
+|------|----------|----------|
+| `vp8-fps` | `-vp8-fps` | FPS VP8 потока |
+| `vp8-batch` | `-vp8-batch` | Кадров за тик |
+
+### seichannel
+
+| Ключ | CLI-флаг | Описание |
+|------|----------|----------|
+| `fps` | `-fps` | FPS H264 потока |
+| `batch` | `-batch` | Кадров за тик |
+| `frag` | `-frag` | Размер фрагмента в байтах |
+| `ack-ms` | `-ack-ms` | Таймаут ACK в миллисекундах |
+
+### videochannel
+
+| Ключ | CLI-флаг | Описание |
+|------|----------|----------|
+| `video-w` | `-video-w` | Ширина в пикселях |
+| `video-h` | `-video-h` | Высота в пикселях |
+| `video-fps` | `-video-fps` | FPS |
+| `video-bitrate` | `-video-bitrate` | Битрейт, например `5000k` или `2M` |
+| `video-hw` | `-video-hw` | Аппаратное ускорение: `none` или `nvenc` |
+| `video-codec` | `-video-codec` | `qrcode` или `tile` |
+| `video-qr-size` | `-video-qr-size` | Размер фрагмента QR в байтах |
+| `video-qr-recovery` | `-video-qr-recovery` | Коррекция ошибок: `low` / `medium` / `high` / `highest` |
+| `video-tile-module` | `-video-tile-module` | Размер тайла в пикселях 1..270 (только `tile`) |
+| `video-tile-rs` | `-video-tile-rs` | Reed-Solomon паритет % 0..200 (только `tile`) |
+
+---
+
+## Соответствие параметрам olcrtc
 
 | URI поле | Параметр / значение |
 |----------|---------------------|
 | `<Carrier>` | `-carrier` |
 | `<Transport>` | `-transport` |
+| payload | соответствующие флаги транспорта |
 | `<RoomID>` | `-id` |
 | `<EncryptionKey>` | `-key` |
 | `<ClientID>` | `-client-id` |
@@ -58,12 +100,11 @@ URI-поля сопоставляются с обычными параметра
 
 ## Разделители
 
-Строка использует фиксированные разделители:
-
 | Разделитель | После него идёт |
 |-------------|-----------------|
 | `://` | начало полезной нагрузки после схемы `olcrtc` |
 | `?` | `<Transport>` |
+| `<...>` | payload параметров транспорта |
 | `@` | `<RoomID>` |
 | `#` | `<EncryptionKey>` |
 | `%` | `<ClientID>` |
@@ -81,16 +122,7 @@ URI-поля сопоставляются с обычными параметра
 olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
 ```
 
-Разбор:
-
-| Поле | Значение |
-|------|----------|
-| `Carrier` | `wbstream` |
-| `Transport` | `datachannel` |
-| `RoomID` | `room-01` |
-| `EncryptionKey` | `d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799` |
-| `ClientID` | `android-01` |
-| `MIMO` | `RU / olc free sub / IPv6` |
+Payload не нужен — datachannel параметров не имеет.
 
 ### Эквивалент CLI
 
@@ -105,10 +137,64 @@ olcrtc://wbstream?datachannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e29
   -data data
 ```
 
-### wbstream + seichannel (альтернатива)
+### wbstream + vp8channel
 
 ```text
-olcrtc://wbstream?seichannel@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
+olcrtc://wbstream?vp8channel<vp8-fps=60&vp8-batch=64>@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$RU / olc free sub / IPv6
+```
+
+### Эквивалент CLI
+
+```sh
+./olcrtc -mode cnc \
+  -carrier wbstream \
+  -transport vp8channel \
+  -id room-01 \
+  -client-id android-01 \
+  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
+  -link direct \
+  -data data \
+  -vp8-fps 60 -vp8-batch 64
+```
+
+### jazz + seichannel
+
+```text
+olcrtc://jazz?seichannel<fps=60&batch=64&frag=900&ack-ms=2000>@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$DE / olc free sub
+```
+
+### Эквивалент CLI
+
+```sh
+./olcrtc -mode cnc \
+  -carrier jazz \
+  -transport seichannel \
+  -id room-01 \
+  -client-id android-01 \
+  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
+  -link direct \
+  -data data \
+  -fps 60 -batch 64 -frag 900 -ack-ms 2000
+```
+
+### telemost + videochannel
+
+```text
+olcrtc://telemost?videochannel<video-w=1080&video-h=1080&video-fps=60&video-bitrate=5000k&video-hw=none&video-codec=qrcode>@room-01#d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799%android-01$MIMO
+```
+
+### Эквивалент CLI
+
+```sh
+./olcrtc -mode cnc \
+  -carrier telemost \
+  -transport videochannel \
+  -id room-01 \
+  -client-id android-01 \
+  -key d823fa01cb3e0609b67322f7cf984c4ee2e4ce2e294936fc24ef38c9e59f4799 \
+  -link direct \
+  -data data \
+  -video-w 1080 -video-h 1080 -video-fps 60 -video-bitrate 5000k -video-hw none -video-codec qrcode
 ```
 
 ---
