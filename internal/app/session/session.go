@@ -432,7 +432,7 @@ func genRetry(ctx context.Context, fn func(context.Context) error) error {
 		if attempt < genMaxAttempts-1 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return fmt.Errorf("context canceled: %w", ctx.Err())
 			case <-time.After(genRetryDelay):
 			}
 		}
@@ -449,7 +449,7 @@ func Gen(ctx context.Context, cfg Config, out func(string)) error {
 			err := genRetry(ctx, func(ctx context.Context) error {
 				info, err := jazz.CreateRoom(ctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("jazz.CreateRoom: %w", err)
 				}
 				roomID = info.RoomID
 				return nil
@@ -465,7 +465,10 @@ func Gen(ctx context.Context, cfg Config, out func(string)) error {
 			err := genRetry(ctx, func(ctx context.Context) error {
 				var err error
 				roomID, err = wbstream.CreateRoom(ctx, names.Generate())
-				return err
+				if err != nil {
+					return fmt.Errorf("wbstream.CreateRoom: %w", err)
+				}
+				return nil
 			})
 			if err != nil {
 				return fmt.Errorf("gen wbstream room %d: %w", i+1, err)
