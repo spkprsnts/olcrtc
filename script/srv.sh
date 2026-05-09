@@ -319,8 +319,9 @@ podman run -d \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
 read -p "Enter a comment for the config (default: OLC chat - t.me/openlibrecommunitychat): " sub_configname
-if [-f "$sub_configname"]; then
+if [ -z "$sub_configname" ]; then
     sub_configname="OLC chat - t.me/openlibrecommunitychat"
+fi
 
 echo ""
 echo "[+] Server started successfully!"
