@@ -321,6 +321,10 @@ podman run -d \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
+read -p "Enter a comment for the config (default: OLC chat - t.me/openlibrecommunitychat): " sub_configname
+if [-f "$sub_configname"]; then
+    sub_configname="OLC chat - t.me/openlibrecommunitychat"
+
 echo ""
 echo "[+] Server started successfully!"
 echo ""
@@ -330,6 +334,8 @@ echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
 echo "Encryption key: $KEY"
+echo ""
+echo "uri: olcrtc://$CARRIER?$TRANSPORT@$ROOM_ID#$KEY%$CLIENT_ID"$"$sub_configname"
 
 if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
     echo "SOCKS5 proxy:   $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
