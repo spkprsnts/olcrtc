@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/openlibrecommunity/olcrtc/internal/carrier"
 	"github.com/openlibrecommunity/olcrtc/internal/carrier/builtin"
@@ -416,20 +417,56 @@ func ValidateGen(cfg Config) error {
 	return nil
 }
 
+const (
+	genMaxAttempts = 5
+	genRetryDelay  = 2 * time.Second
+)
+
+func genRetry(ctx context.Context, fn func(context.Context) error) error {
+	var lastErr error
+	for attempt := range genMaxAttempts {
+		lastErr = fn(ctx)
+		if lastErr == nil {
+			return nil
+		}
+		if attempt < genMaxAttempts-1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(genRetryDelay):
+			}
+		}
+	}
+	return lastErr
+}
+
 // Gen creates cfg.Amount rooms for the configured carrier and writes each room ID to out.
 func Gen(ctx context.Context, cfg Config, out func(string)) error {
 	switch cfg.Carrier {
 	case carrierJazz:
 		for i := range cfg.Amount {
-			info, err := jazz.CreateRoom(ctx)
+			var roomID string
+			err := genRetry(ctx, func(ctx context.Context) error {
+				info, err := jazz.CreateRoom(ctx)
+				if err != nil {
+					return err
+				}
+				roomID = info.RoomID
+				return nil
+			})
 			if err != nil {
 				return fmt.Errorf("gen jazz room %d: %w", i+1, err)
 			}
-			out(info.RoomID)
+			out(roomID)
 		}
 	case carrierWBStream:
 		for i := range cfg.Amount {
-			roomID, err := wbstream.CreateRoom(ctx, names.Generate())
+			var roomID string
+			err := genRetry(ctx, func(ctx context.Context) error {
+				var err error
+				roomID, err = wbstream.CreateRoom(ctx, names.Generate())
+				return err
+			})
 			if err != nil {
 				return fmt.Errorf("gen wbstream room %d: %w", i+1, err)
 			}
