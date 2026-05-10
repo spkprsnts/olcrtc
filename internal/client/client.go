@@ -36,6 +36,8 @@ var (
 	ErrUnsupportedAddressType = errors.New("unsupported address type")
 	// ErrRemoteNotReady is returned when the server-side stream fails to signal readiness.
 	ErrRemoteNotReady = errors.New("remote not ready")
+	// ErrSOCKSAuthFailed is returned when username/password authentication is rejected.
+	ErrSOCKSAuthFailed = errors.New("SOCKS5 authentication failed")
 )
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
@@ -47,6 +49,8 @@ type Client struct {
 	sessMu    sync.RWMutex
 	clientID  string
 	dnsServer string
+	socksUser string
+	socksPass string
 }
 
 // Run starts the client with the specified parameters.
@@ -100,8 +104,8 @@ func RunWithReady(
 	clientID string,
 	localAddr string,
 	dnsServer,
-	_ string,
-	_ string,
+	socksUser string,
+	socksPass string,
 	onReady func(),
 	videoWidth int,
 	videoHeight int,
@@ -128,7 +132,7 @@ func RunWithReady(
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
-	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer}
+	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer, socksUser: socksUser, socksPass: socksPass}
 
 	if err := c.bringUpLink(
 		runCtx, linkName, transportName, carrierName, roomURL, cancel,
@@ -411,8 +415,41 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 	if _, err := io.ReadFull(conn, methods); err != nil {
 		return fmt.Errorf("read socks5 methods: %w", err)
 	}
+
+	if c.socksUser != "" {
+		// RFC 1929: method 0x02 = username/password auth.
+		if _, err := conn.Write([]byte{5, 2}); err != nil {
+			return fmt.Errorf("write socks5 auth method: %w", err)
+		}
+		if err := c.socks5UserPassAuth(conn); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	if _, err := conn.Write([]byte{5, 0}); err != nil {
 		return fmt.Errorf("write socks5 auth: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) socks5UserPassAuth(conn net.Conn) error {
+	user := []byte(c.socksUser)
+	pass := []byte(c.socksPass)
+	req := make([]byte, 0, 3+len(user)+len(pass))
+	req = append(req, 0x01, byte(len(user)))
+	req = append(req, user...)
+	req = append(req, byte(len(pass)))
+	req = append(req, pass...)
+	if _, err := conn.Write(req); err != nil {
+		return fmt.Errorf("write socks5 user/pass: %w", err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return fmt.Errorf("read socks5 auth response: %w", err)
+	}
+	if resp[1] != 0x00 {
+		return ErrSOCKSAuthFailed
 	}
 	return nil
 }

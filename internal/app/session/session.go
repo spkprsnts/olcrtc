@@ -118,6 +118,8 @@ type Config struct {
 	KeyHex          string
 	SOCKSHost       string
 	SOCKSPort       int
+	SOCKSUser       string
+	SOCKSPass       string
 	DNSServer       string
 	SOCKSProxyAddr  string
 	SOCKSProxyPort  int
@@ -357,8 +359,8 @@ func Run(ctx context.Context, cfg Config) error {
 			cfg.ClientID,
 			fmt.Sprintf("%s:%d", cfg.SOCKSHost, cfg.SOCKSPort),
 			cfg.DNSServer,
-			"",
-			"",
+			cfg.SOCKSUser,
+			cfg.SOCKSPass,
 			cfg.VideoWidth,
 			cfg.VideoHeight,
 			cfg.VideoFPS,

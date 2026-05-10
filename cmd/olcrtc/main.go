@@ -40,6 +40,8 @@ type config struct {
 	clientID        string
 	socksPort       int
 	socksHost       string
+	socksUser       string
+	socksPass       string
 	keyHex          string
 	debug           bool
 	dataDir         string
@@ -172,6 +174,8 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.StringVar(&cfg.clientID, "client-id", "", "Client ID: binds one srv to one cnc (required)")
 	fs.IntVar(&cfg.socksPort, "socks-port", 0, "SOCKS5 port (client only)")
 	fs.StringVar(&cfg.socksHost, "socks-host", "", "SOCKS5 listen host (client only)")
+	fs.StringVar(&cfg.socksUser, "socks-user", "", "SOCKS5 username for incoming connections (client only, optional)")
+	fs.StringVar(&cfg.socksPass, "socks-pass", "", "SOCKS5 password for incoming connections (client only, optional)")
 	fs.StringVar(&cfg.keyHex, "key", "", "Shared encryption key (hex)")
 	fs.BoolVar(&cfg.debug, "debug", false, "Enable verbose logging")
 	fs.StringVar(&cfg.dataDir, "data", "", "Path to data directory")
@@ -250,6 +254,8 @@ func toSessionConfig(cfg config) session.Config {
 		KeyHex:          cfg.keyHex,
 		SOCKSHost:       cfg.socksHost,
 		SOCKSPort:       cfg.socksPort,
+		SOCKSUser:       cfg.socksUser,
+		SOCKSPass:       cfg.socksPass,
 		DNSServer:       cfg.dnsServer,
 		SOCKSProxyAddr:  cfg.socksProxyAddr,
 		SOCKSProxyPort:  cfg.socksProxyPort,
