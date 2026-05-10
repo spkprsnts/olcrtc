@@ -37,7 +37,7 @@ var (
 	// ErrRemoteNotReady is returned when the server-side stream fails to signal readiness.
 	ErrRemoteNotReady = errors.New("remote not ready")
 	// ErrSOCKSAuthFailed is returned when username/password authentication is rejected.
-	ErrSOCKSAuthFailed  = errors.New("SOCKS5 authentication failed")
+	ErrSOCKSAuthFailed = errors.New("SOCKS5 authentication failed")
 	// ErrSOCKSCredTooLong is returned when a SOCKS5 username or password exceeds 255 bytes.
 	ErrSOCKSCredTooLong = errors.New("socks5 user/pass exceeds 255 bytes")
 )
@@ -436,27 +436,38 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 }
 
 func (c *Client) socks5UserPassAuth(conn net.Conn) error {
-	user := []byte(c.socksUser)
-	pass := []byte(c.socksPass)
-	if len(user) > 255 || len(pass) > 255 {
-		return ErrSOCKSCredTooLong
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return fmt.Errorf("read socks5 auth header: %w", err)
 	}
-	ulen, plen := uint8(len(user)), uint8(len(pass)) //nolint:gosec // bounds checked above
-	req := make([]byte, 0, 3+len(user)+len(pass))
-	req = append(req, 0x01, ulen)
-	req = append(req, user...)
-	req = append(req, plen)
-	req = append(req, pass...)
-	if _, err := conn.Write(req); err != nil {
-		return fmt.Errorf("write socks5 user/pass: %w", err)
+	if header[0] != 0x01 {
+		return fmt.Errorf("%w: expected auth version 1, got %d", ErrInvalidSOCKSVersion, header[0])
 	}
-	resp := make([]byte, 2)
-	if _, err := io.ReadFull(conn, resp); err != nil {
-		return fmt.Errorf("read socks5 auth response: %w", err)
+	ulen := int(header[1])
+	userBuf := make([]byte, ulen)
+	if _, err := io.ReadFull(conn, userBuf); err != nil {
+		return fmt.Errorf("read socks5 username: %w", err)
 	}
-	if resp[1] != 0x00 {
+	plenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(conn, plenBuf); err != nil {
+		return fmt.Errorf("read socks5 plen: %w", err)
+	}
+
+	plen := int(plenBuf[0])
+	passBuf := make([]byte, plen)
+	if _, err := io.ReadFull(conn, passBuf); err != nil {
+		return fmt.Errorf("read socks5 password: %w", err)
+	}
+
+	if string(userBuf) != c.socksUser || string(passBuf) != c.socksPass {
+		_, _ = conn.Write([]byte{0x01, 0x01})
 		return ErrSOCKSAuthFailed
 	}
+
+	if _, err := conn.Write([]byte{0x01, 0x00}); err != nil {
+		return fmt.Errorf("write socks5 auth success: %w", err)
+	}
+
 	return nil
 }
 
