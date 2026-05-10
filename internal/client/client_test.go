@@ -86,8 +86,8 @@ func TestSocks5HandshakeWithAuth(t *testing.T) {
 		done <- c.socks5Handshake(server)
 	}()
 
-	// Client greeting: VER=5, NMETHODS=1, METHOD=0x00 (no-auth)
-	if _, err := client.Write([]byte{5, 1, 0}); err != nil {
+	// Client greeting: VER=5, NMETHODS=1, METHOD=0x02 (user/pass)
+	if _, err := client.Write([]byte{5, 1, 2}); err != nil {
 		t.Fatalf("Write greeting: %v", err)
 	}
 	// Server must reply with method 0x02 (username/password)
@@ -98,33 +98,21 @@ func TestSocks5HandshakeWithAuth(t *testing.T) {
 	if !bytes.Equal(resp, []byte{5, 2}) {
 		t.Fatalf("method selection = %v, want [5 2]", resp)
 	}
-	// Read the auth sub-negotiation: VER(1) + ULEN(1) + USER + PLEN(1) + PASS
-	header := make([]byte, 2)
-	if _, err := io.ReadFull(client, header); err != nil {
-		t.Fatalf("read auth header: %v", err)
+	// Send the auth sub-negotiation: VER(1) + ULEN(1) + USER + PLEN(1) + PASS
+	authReq := []byte{0x01, 0x04}
+	authReq = append(authReq, []byte("user")...)
+	authReq = append(authReq, 0x04)
+	authReq = append(authReq, []byte("pass")...)
+	if _, err := client.Write(authReq); err != nil {
+		t.Fatalf("write auth: %v", err)
 	}
-	if header[0] != 0x01 {
-		t.Fatalf("auth sub-version = %d, want 1", header[0])
+	// Read the auth response
+	authResp := make([]byte, 2)
+	if _, err := io.ReadFull(client, authResp); err != nil {
+		t.Fatalf("read auth response: %v", err)
 	}
-	ulen := int(header[1])
-	userBuf := make([]byte, ulen)
-	if _, err := io.ReadFull(client, userBuf); err != nil {
-		t.Fatalf("read username: %v", err)
-	}
-	plenBuf := make([]byte, 1)
-	if _, err := io.ReadFull(client, plenBuf); err != nil {
-		t.Fatalf("read plen: %v", err)
-	}
-	passBuf := make([]byte, int(plenBuf[0]))
-	if _, err := io.ReadFull(client, passBuf); err != nil {
-		t.Fatalf("read password: %v", err)
-	}
-	if string(userBuf) != "user" || string(passBuf) != "pass" {
-		t.Fatalf("credentials = (%q, %q), want (user, pass)", userBuf, passBuf)
-	}
-	// Reply success
-	if _, err := client.Write([]byte{0x01, 0x00}); err != nil {
-		t.Fatalf("write auth reply: %v", err)
+	if !bytes.Equal(authResp, []byte{0x01, 0x00}) {
+		t.Fatalf("auth response = %v, want [1 0]", authResp)
 	}
 
 	if err := <-done; err != nil {
@@ -133,7 +121,7 @@ func TestSocks5HandshakeWithAuth(t *testing.T) {
 }
 
 func TestSocks5HandshakeAuthRejected(t *testing.T) {
-	c := &Client{socksUser: "user", socksPass: "wrong"}
+	c := &Client{socksUser: "user", socksPass: "right"}
 	server, client := net.Pipe()
 	defer func() {
 		_ = server.Close()
@@ -145,7 +133,7 @@ func TestSocks5HandshakeAuthRejected(t *testing.T) {
 		done <- c.socks5Handshake(server)
 	}()
 
-	if _, err := client.Write([]byte{5, 1, 0}); err != nil {
+	if _, err := client.Write([]byte{5, 1, 2}); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 	// Consume method selection reply [5, 2]
@@ -153,26 +141,21 @@ func TestSocks5HandshakeAuthRejected(t *testing.T) {
 	if _, err := io.ReadFull(client, resp); err != nil {
 		t.Fatalf("ReadFull method: %v", err)
 	}
-	// Consume auth sub-negotiation
-	header := make([]byte, 2)
-	if _, err := io.ReadFull(client, header); err != nil {
-		t.Fatalf("read auth header: %v", err)
+	// Send wrong credentials
+	authReq := []byte{0x01, 0x04}
+	authReq = append(authReq, []byte("user")...)
+	authReq = append(authReq, 0x05)
+	authReq = append(authReq, []byte("wrong")...)
+	if _, err := client.Write(authReq); err != nil {
+		t.Fatalf("write auth: %v", err)
 	}
-	rest := make([]byte, int(header[1]))
-	if _, err := io.ReadFull(client, rest); err != nil {
-		t.Fatalf("read username: %v", err)
+	// Server should reply with failure [0x01, 0x01]
+	authResp := make([]byte, 2)
+	if _, err := io.ReadFull(client, authResp); err != nil {
+		t.Fatalf("read auth response: %v", err)
 	}
-	plenBuf := make([]byte, 1)
-	if _, err := io.ReadFull(client, plenBuf); err != nil {
-		t.Fatalf("read plen: %v", err)
-	}
-	passBuf := make([]byte, int(plenBuf[0]))
-	if _, err := io.ReadFull(client, passBuf); err != nil {
-		t.Fatalf("read password: %v", err)
-	}
-	// Reply failure
-	if _, err := client.Write([]byte{0x01, 0x01}); err != nil {
-		t.Fatalf("write auth reject: %v", err)
+	if !bytes.Equal(authResp, []byte{0x01, 0x01}) {
+		t.Fatalf("auth response = %v, want [1 1]", authResp)
 	}
 
 	if err := <-done; !errors.Is(err, ErrSOCKSAuthFailed) {
