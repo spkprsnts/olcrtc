@@ -37,7 +37,9 @@ var (
 	// ErrRemoteNotReady is returned when the server-side stream fails to signal readiness.
 	ErrRemoteNotReady = errors.New("remote not ready")
 	// ErrSOCKSAuthFailed is returned when username/password authentication is rejected.
-	ErrSOCKSAuthFailed = errors.New("SOCKS5 authentication failed")
+	ErrSOCKSAuthFailed  = errors.New("SOCKS5 authentication failed")
+	// ErrSOCKSCredTooLong is returned when a SOCKS5 username or password exceeds 255 bytes.
+	ErrSOCKSCredTooLong = errors.New("socks5 user/pass exceeds 255 bytes")
 )
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
@@ -436,10 +438,14 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 func (c *Client) socks5UserPassAuth(conn net.Conn) error {
 	user := []byte(c.socksUser)
 	pass := []byte(c.socksPass)
+	if len(user) > 255 || len(pass) > 255 {
+		return ErrSOCKSCredTooLong
+	}
+	ulen, plen := uint8(len(user)), uint8(len(pass)) //nolint:gosec // bounds checked above
 	req := make([]byte, 0, 3+len(user)+len(pass))
-	req = append(req, 0x01, byte(len(user)))
+	req = append(req, 0x01, ulen)
 	req = append(req, user...)
-	req = append(req, byte(len(pass)))
+	req = append(req, plen)
 	req = append(req, pass...)
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("write socks5 user/pass: %w", err)
