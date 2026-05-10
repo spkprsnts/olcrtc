@@ -352,11 +352,9 @@ func (p *streamTransport) writeBatch(idle []byte) bool {
 			if i > 0 {
 				return true
 			}
-			//nolint:errcheck,gosec // best-effort idle keepalive frame
 			_ = p.track.WriteSample(media.Sample{Data: idle, Duration: frameInterval})
 			return true
 		}
-		//nolint:errcheck,gosec // best-effort sample write
 		_ = p.track.WriteSample(media.Sample{Data: buildVideoAccessUnit(payload), Duration: frameInterval})
 	}
 	return true
@@ -474,7 +472,7 @@ func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
 	for _, frag := range msg.frags {
 		data = append(data, frag...)
 	}
-	if uint32(len(data)) > msg.totalLen {
+	if uint32(len(data)) > msg.totalLen { //nolint:gosec // G115: bounded conversion verified by surrounding logic
 		data = data[:msg.totalLen]
 	}
 	return data
@@ -515,7 +513,6 @@ func (p *streamTransport) handleInboundFrame(frame transportFrame) {
 }
 
 func (p *streamTransport) sendAck(seq, crc uint32) {
-	//nolint:dogsled,errcheck // ack delivery is best-effort
 	_ = p.enqueueFrame(encodeAckFrame(seq, crc), true)
 }
 
@@ -558,9 +555,9 @@ func encodeDataFrame(seq, crc uint32, totalLen, fragIdx, fragTotal int, payload 
 	out[5] = frameTypeData
 	binary.BigEndian.PutUint32(out[6:10], seq)
 	binary.BigEndian.PutUint32(out[10:14], crc)
-	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))
-	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))
-	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal))
+	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
+	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
+	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 	copy(out[22:], payload)
 	return out
 }

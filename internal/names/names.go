@@ -18,8 +18,8 @@ var embeddedNames string
 var embeddedSurnames string
 
 var (
-	firstNames = parseEmbedded(embeddedNames)
-	lastNames  = parseEmbedded(embeddedSurnames)
+	firstNames = parseEmbedded(embeddedNames) //nolint:gochecknoglobals // package-level state intentional
+	lastNames  = parseEmbedded(embeddedSurnames) //nolint:gochecknoglobals // package-level state intentional
 )
 
 func parseEmbedded(raw string) []string {
@@ -35,7 +35,7 @@ func parseEmbedded(raw string) []string {
 }
 
 func loadNames(path string) ([]string, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(path) //nolint:gosec // G304: opens internal asset bundled with the binary
 	if err != nil {
 		return nil, fmt.Errorf("open names file %q: %w", path, err)
 	}

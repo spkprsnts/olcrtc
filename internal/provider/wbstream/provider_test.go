@@ -8,6 +8,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestWBStreamProviderForwardsPeerMethods(t *testing.T) {
 	peer, err := NewPeer(context.Background(), "room", "name", nil)
 	if err != nil {

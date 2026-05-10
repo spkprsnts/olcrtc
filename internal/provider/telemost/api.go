@@ -13,10 +13,15 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
+//nolint:gochecknoglobals // overridable base URL for tests
 var apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
 
+// ErrAPI marks failures returned by the Telemost HTTP API.
 var ErrAPI = errors.New("api error")
 
+// ConnectionInfo describes the connection metadata returned by the Telemost API.
+//
+//nolint:tagliatelle // wire format dictated by the upstream Telemost API
 type ConnectionInfo struct {
 	RoomID       string `json:"room_id"`
 	PeerID       string `json:"peer_id"`
@@ -26,6 +31,7 @@ type ConnectionInfo struct {
 	} `json:"client_configuration"`
 }
 
+// GetConnectionInfo fetches connection metadata for the given Telemost room URL.
 func GetConnectionInfo(ctx context.Context, roomURL, displayName string) (*ConnectionInfo, error) {
 	u := fmt.Sprintf("%s/conferences/%s/connection", apiBase, url.QueryEscape(roomURL))
 

@@ -65,6 +65,7 @@ type nonVideoSession struct{}
 
 func (s *nonVideoSession) Capabilities() carrier.Capabilities { return carrier.Capabilities{} }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 	stream := &fakeVideoStream{canSend: true}
 	name := "seichannel-unit-new"
@@ -105,7 +106,7 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
-	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 {
+	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 { //nolint:lll // long test description
 		t.Fatalf("Features() = %+v", features)
 	}
 	if tr.fragmentSize != 512 || tr.batchSize != 3 || tr.frameInterval != 25*time.Millisecond ||
@@ -122,21 +123,21 @@ func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("seichannel-create-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return nil, errBoom
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 
 	carrier.Register("seichannel-no-video", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return &nonVideoSession{}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) {
+	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) { //nolint:lll // long test description
 		t.Fatalf("New() error = %v, want %v", err, ErrVideoTrackUnsupported)
 	}
 
 	carrier.Register("seichannel-open-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return &fakeVideoSession{err: errOpenBoom}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-open-fails"}); err == nil || err.Error() != "open video track: open boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-open-fails"}); err == nil || err.Error() != "open video track: open boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 }

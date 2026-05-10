@@ -55,7 +55,7 @@ type Config struct {
 // Factory creates a link instance.
 type Factory func(ctx context.Context, cfg Config) (Link, error)
 
-var registry = make(map[string]Factory)
+var registry = make(map[string]Factory) //nolint:gochecknoglobals // package-level state intentional
 
 // Register adds a link factory to the registry.
 func Register(name string, factory Factory) {

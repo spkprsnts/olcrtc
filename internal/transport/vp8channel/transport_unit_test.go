@@ -14,6 +14,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	errVP8UnitBoom     = errors.New("boom")
+	errVP8UnitOpenBoom = errors.New("open boom")
+)
+
 type fakeVideoSession struct {
 	stream *fakeVideoStream
 	err    error
@@ -77,6 +82,7 @@ type nonVideoSession struct{}
 
 func (s *nonVideoSession) Capabilities() carrier.Capabilities { return carrier.Capabilities{} }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	stream := &fakeVideoStream{canSend: true}
 	name := "vp8channel-unit-new"
@@ -93,7 +99,10 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	tr := trIface.(*streamTransport)
+	tr, ok := trIface.(*streamTransport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *streamTransport", trIface)
+	}
 	if !stream.trackAdded || stream.trackCB == nil {
 		t.Fatal("New() did not attach track and handler")
 	}
@@ -125,7 +134,7 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
-	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 {
+	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 { //nolint:lll // long test description
 		t.Fatalf("Features() = %+v", features)
 	}
 	if err := tr.Send([]byte("payload")); err != nil {
@@ -142,27 +151,28 @@ func TestNewConnectSendCallbacksFeaturesAndClose(t *testing.T) {
 
 func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("vp8channel-create-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return nil, errors.New("boom")
+		return nil, errVP8UnitBoom
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 
 	carrier.Register("vp8channel-no-video", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return &nonVideoSession{}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) {
+	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) { //nolint:lll // long test description
 		t.Fatalf("New() error = %v, want %v", err, ErrVideoTrackUnsupported)
 	}
 
 	carrier.Register("vp8channel-open-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return &fakeVideoSession{err: errors.New("open boom")}, nil
+		return &fakeVideoSession{err: errVP8UnitOpenBoom}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-open-fails"}); err == nil || err.Error() != "open video track: open boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "vp8channel-open-fails"}); err == nil || err.Error() != "open video track: open boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestEpochHeaderTokenAndOutboundCapacity(t *testing.T) {
 	tr := &streamTransport{
 		stream:       &fakeVideoStream{canSend: true},
@@ -256,6 +266,7 @@ func TestVP8FrameStateAssemblesAndRejectsCorruptFrames(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestHandleIncomingFrameEpochFilteringAndReconnect(t *testing.T) {
 	called := 0
 	tr := &streamTransport{
@@ -293,7 +304,10 @@ func TestHandleIncomingFrameEpochFilteringAndReconnect(t *testing.T) {
 
 	reconnected := false
 	tr.SetReconnectCallback(func() { reconnected = true })
-	stream := tr.stream.(*fakeVideoStream)
+	stream, ok := tr.stream.(*fakeVideoStream)
+	if !ok {
+		t.Fatalf("stream type = %T, want *fakeVideoStream", tr.stream)
+	}
 	if stream.reconnect == nil {
 		t.Fatal("SetReconnectCallback did not install stream callback")
 	}
@@ -304,6 +318,6 @@ func TestHandleIncomingFrameEpochFilteringAndReconnect(t *testing.T) {
 	reconnected = false
 	tr.handleIncomingFrame(mkFrame(tr.bindingToken, 2, []byte("after-restart")))
 	if !reconnected || tr.peerEpoch.Load() != 2 || tr.kcp == nil {
-		t.Fatalf("epoch change did not reset/reconnect: reconnected=%v epoch=%d kcp=%v", reconnected, tr.peerEpoch.Load(), tr.kcp)
+		t.Fatalf("epoch change did not reset/reconnect: reconnected=%v epoch=%d kcp=%v", reconnected, tr.peerEpoch.Load(), tr.kcp) //nolint:lll // long test description
 	}
 }

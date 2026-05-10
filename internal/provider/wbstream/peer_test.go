@@ -13,7 +13,7 @@ func TestNewPeerAndSimpleAccessors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPeer() error = %v", err)
 	}
-	if p.roomURL != "room" || p.name != "name" || p.sendQueue == nil || p.done == nil {
+	if p.roomURL != "room" || p.name != "name" || p.sendQueue == nil || p.done == nil { //nolint:goconst,lll // test literal, repetition is intentional
 		t.Fatalf("NewPeer() = %+v", p)
 	}
 	if p.GetSendQueue() != p.sendQueue {

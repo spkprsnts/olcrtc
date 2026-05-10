@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var errProtectBoom = errors.New("boom")
+
 type rawConnStub struct {
 	controlFn func(func(uintptr)) error
 }
@@ -67,13 +69,14 @@ func TestControlFuncWrapsControlError(t *testing.T) {
 	t.Cleanup(func() { Protector = old })
 
 	err := controlFunc("tcp4", "", rawConnStub{
-		controlFn: func(func(uintptr)) error { return errors.New("boom") },
+		controlFn: func(func(uintptr)) error { return errProtectBoom },
 	})
 	if err == nil || err.Error() != "control failed: boom" {
 		t.Fatalf("controlFunc() error = %v", err)
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewDialerAndHTTPClient(t *testing.T) {
 	dialer := NewDialer()
 	if dialer.Timeout != 10*time.Second || dialer.KeepAlive != 30*time.Second || dialer.Control == nil {
@@ -93,7 +96,8 @@ func TestNewDialerAndHTTPClient(t *testing.T) {
 }
 
 func TestDialContextAndProxyDialer(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
 	}

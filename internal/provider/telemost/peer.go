@@ -1469,7 +1469,7 @@ func (p *Peer) calculateDelay() time.Duration {
 	if maxDelay <= minDelay {
 		return minDelay
 	}
-	return minDelay + time.Duration(rand.Int64N(int64(maxDelay-minDelay)))
+	return minDelay + time.Duration(rand.Int64N(int64(maxDelay-minDelay))) //nolint:gosec,lll // G404: non-cryptographic shaping randomness
 }
 
 // CanSend checks if data can be sent.

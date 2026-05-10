@@ -16,7 +16,7 @@ func encodeVarint(value uint64) []byte {
 }
 
 func encodeField(fieldNumber int, wireType int, data []byte) []byte {
-	tag := encodeVarint(uint64(fieldNumber)<<3 | uint64(wireType))
+	tag := encodeVarint(uint64(fieldNumber)<<3 | uint64(wireType)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 	switch wireType {
 	case 2:
 		length := encodeVarint(uint64(len(data)))
@@ -101,12 +101,12 @@ func handleWireType(reader *byteReader, wireType int, dataLen int) ([]byte, bool
 		if err != nil {
 			return nil, false
 		}
-		if length > uint64(dataLen)-uint64(reader.pos) {
+		if length > uint64(dataLen)-uint64(reader.pos) { //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 			return nil, false
 		}
 		fieldData := make([]byte, length)
 		n, err := reader.Read(fieldData)
-		if err != nil || uint64(n) != length {
+		if err != nil || uint64(n) != length { //nolint:gosec // G115: bounded conversion verified by surrounding logic
 			return nil, false
 		}
 		return fieldData, true

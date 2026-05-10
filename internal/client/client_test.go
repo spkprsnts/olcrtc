@@ -16,6 +16,8 @@ import (
 	"github.com/xtaci/smux"
 )
 
+var errUnexpectedConnectRequest = errors.New("unexpected connect request")
+
 func TestSetupCipher(t *testing.T) {
 	keyHex := "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	cipher, err := setupCipher(keyHex)
@@ -98,7 +100,8 @@ func TestSocks5HandshakeWithAuth(t *testing.T) {
 		t.Fatalf("method selection = %v, want [5 2]", resp)
 	}
 	// Send the auth sub-negotiation: VER(1) + ULEN(1) + USER + PLEN(1) + PASS
-	authReq := []byte{0x01, 0x04}
+	authReq := make([]byte, 0, 11)
+	authReq = append(authReq, 0x01, 0x04)
 	authReq = append(authReq, []byte("user")...)
 	authReq = append(authReq, 0x04)
 	authReq = append(authReq, []byte("pass")...)
@@ -141,7 +144,8 @@ func TestSocks5HandshakeAuthRejected(t *testing.T) {
 		t.Fatalf("ReadFull method: %v", err)
 	}
 	// Send wrong credentials
-	authReq := []byte{0x01, 0x04}
+	authReq := make([]byte, 0, 12)
+	authReq = append(authReq, 0x01, 0x04)
 	authReq = append(authReq, []byte("user")...)
 	authReq = append(authReq, 0x05)
 	authReq = append(authReq, []byte("wrong")...)
@@ -266,7 +270,8 @@ func TestSocks5RequestDomain(t *testing.T) {
 		}{addr: addr, port: port, err: err}
 	}()
 
-	req := []byte{5, 1, 0, 3, 11}
+	req := make([]byte, 0, 16)
+	req = append(req, 5, 1, 0, 3, 11)
 	req = append(req, []byte("example.com")...)
 	port := make([]byte, 2)
 	binary.BigEndian.PutUint16(port, 443)
@@ -379,6 +384,7 @@ func TestReadSocks5AddrReadErrors(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestSendConnectRequestOverSmux(t *testing.T) {
 	a, b := net.Pipe()
 	defer func() {
@@ -411,8 +417,8 @@ func TestSendConnectRequestOverSmux(t *testing.T) {
 			done <- err
 			return
 		}
-		if req["cmd"] != "connect" || req["clientId"] != "client-1" || req["addr"] != "example.com" {
-			done <- errors.New("unexpected connect request")
+		if req["cmd"] != "connect" || req["clientId"] != "client-1" || req["addr"] != "example.com" { //nolint:goconst,lll // test literal, repetition is intentional
+			done <- errUnexpectedConnectRequest
 			return
 		}
 		_, err = stream.Write([]byte{0x00})
@@ -486,7 +492,7 @@ func (s *closerLinkStub) SetEndedCallback(func(string))   {}
 func (s *closerLinkStub) WatchConnection(context.Context) {}
 func (s *closerLinkStub) CanSend() bool                   { return true }
 
-func TestOnDataWithNilConn(t *testing.T) {
+func TestOnDataWithNilConn(_ *testing.T) {
 	c := &Client{}
 	c.onData([]byte("ignored"))
 }

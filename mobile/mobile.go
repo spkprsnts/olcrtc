@@ -65,14 +65,14 @@ const (
 )
 
 var (
-	mu                 sync.Mutex
-	defaults           mobileConfig
-	defaultsSet        sync.Once
-	registerSet        sync.Once
-	runClientWithReady = client.RunWithReady
-	cancel             context.CancelFunc
-	done               chan struct{}
-	ready              chan struct{}
+	mu                 sync.Mutex //nolint:gochecknoglobals // package-level state intentional
+	defaults           mobileConfig //nolint:gochecknoglobals // package-level state intentional
+	defaultsSet        sync.Once //nolint:gochecknoglobals // package-level state intentional
+	registerSet        sync.Once //nolint:gochecknoglobals // package-level state intentional
+	runClientWithReady = client.RunWithReady //nolint:gochecknoglobals // package-level state intentional
+	cancel             context.CancelFunc //nolint:gochecknoglobals // package-level state intentional
+	done               chan struct{} //nolint:gochecknoglobals // package-level state intentional
+	ready              chan struct{} //nolint:gochecknoglobals // package-level state intentional
 	errRun             error
 )
 
@@ -616,6 +616,7 @@ func startWithConfig(
 }
 
 // WaitReady blocks until the selected transport is connected and the local SOCKS5 listener is ready.
+//nolint:cyclop // straightforward state-machine waits with multiple terminal conditions
 func WaitReady(timeoutMillis int) error {
 	mu.Lock()
 	r := ready

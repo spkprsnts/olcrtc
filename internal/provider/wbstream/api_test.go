@@ -20,6 +20,7 @@ func withWBAPIServer(t *testing.T, h http.Handler) {
 	apiBase = srv.URL
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestWBStreamAPIHappyPath(t *testing.T) {
 	withWBAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -27,20 +28,20 @@ func TestWBStreamAPIHappyPath(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("guest method = %s", r.Method)
 			}
-			_ = json.NewEncoder(w).Encode(guestRegisterResponse{AccessToken: "access"})
+			_ = json.NewEncoder(w).Encode(guestRegisterResponse{AccessToken: "access"}) //nolint:goconst,gosec,lll // test literal; G117 is a false positive for test fixtures
 		case "/api-room/api/v2/room":
 			if r.Header.Get("Authorization") != "Bearer access" {
 				t.Fatalf("room auth = %q", r.Header.Get("Authorization"))
 			}
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(createRoomResponse{RoomID: "room"})
+			_ = json.NewEncoder(w).Encode(createRoomResponse{RoomID: "room"}) //nolint:goconst,lll // test literal, repetition is intentional
 		case "/api-room/api/v1/room/room/join":
 			w.WriteHeader(http.StatusOK)
 		case "/api-room-manager/api/v1/room/room/token":
 			if r.URL.Query().Get("displayName") != "peer" {
 				t.Fatalf("displayName query = %q", r.URL.Query().Get("displayName"))
 			}
-			_ = json.NewEncoder(w).Encode(tokenResponse{RoomToken: "token"})
+			_ = json.NewEncoder(w).Encode(tokenResponse{RoomToken: "token"}) //nolint:goconst,lll // test literal, repetition is intentional
 		default:
 			http.NotFound(w, r)
 		}
@@ -75,7 +76,7 @@ func TestWBStreamAPIHappyPath(t *testing.T) {
 }
 
 func TestWBStreamAPIErrors(t *testing.T) {
-	withWBAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withWBAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad", http.StatusBadGateway)
 	}))
 
@@ -97,7 +98,7 @@ func TestWBStreamGetRoomToken(t *testing.T) {
 	withWBAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/api/v1/auth/user/guest-register":
-			_ = json.NewEncoder(w).Encode(guestRegisterResponse{AccessToken: "access"})
+			_ = json.NewEncoder(w).Encode(guestRegisterResponse{AccessToken: "access"}) //nolint:gosec,lll // G117: test-only struct mirroring upstream API shape
 		case "/api-room/api/v2/room":
 			_ = json.NewEncoder(w).Encode(createRoomResponse{RoomID: "created"})
 		case "/api-room/api/v1/room/created/join":

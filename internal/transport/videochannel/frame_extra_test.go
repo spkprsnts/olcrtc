@@ -11,6 +11,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	errVideoFrameBase = errors.New("base")
+	errVideoFrameBoom = errors.New("boom")
+)
+
 func TestFragmentPayload(t *testing.T) {
 	frags := fragmentPayload([]byte("abcdef"), 2)
 	want := [][]byte{[]byte("ab"), []byte("cd"), []byte("ef")}
@@ -56,6 +61,7 @@ func TestDecodeTransportFrameErrorsAndAck(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestCodecSpecsAndArgs(t *testing.T) {
 	for _, mime := range []string{webrtc.MimeTypeH264, webrtc.MimeTypeVP8, webrtc.MimeTypeVP9} {
 		spec, ok := codecSpecForMime(mime)
@@ -79,7 +85,7 @@ func TestCodecSpecsAndArgs(t *testing.T) {
 	if got := resolveEncoderCodec(vp9CodecSpec(), "nvenc"); got != "vp9_nvenc" {
 		t.Fatalf("resolveEncoderCodec(vp9,nvenc) = %q", got)
 	}
-	if got := resolveEncoderCodec(codecSpec{mimeType: webrtc.MimeTypeAV1, encoder: "libaom-av1"}, "nvenc"); got != "av1_nvenc" {
+	if got := resolveEncoderCodec(codecSpec{mimeType: webrtc.MimeTypeAV1, encoder: "libaom-av1"}, "nvenc"); got != "av1_nvenc" { //nolint:lll // long test description
 		t.Fatalf("resolveEncoderCodec(av1,nvenc) = %q", got)
 	}
 
@@ -140,6 +146,7 @@ type bufferWriteCloser struct {
 
 func (w *bufferWriteCloser) Close() error { return nil }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestIVFWritersAndWithStderr(t *testing.T) {
 	var buf bytes.Buffer
 	if err := writeIVFHeader(&buf, "VP80", 320, 240, 30); err != nil {
@@ -164,7 +171,7 @@ func TestIVFWritersAndWithStderr(t *testing.T) {
 		t.Fatalf("writeAll(errWriter) error = %v", err)
 	}
 
-	baseErr := errors.New("base")
+	baseErr := errVideoFrameBase
 	if got := withStderr(baseErr, bytes.NewBufferString(" details \n")); got == nil || got.Error() != "base: details" {
 		t.Fatalf("withStderr() = %v", got)
 	}
@@ -182,13 +189,13 @@ func TestFFmpegProcessErrAndFrameValidation(t *testing.T) {
 	if _, err := enc.EncodeFrame([]byte("bad")); !errors.Is(err, ErrUnexpectedFrameSize) {
 		t.Fatalf("EncodeFrame(short) error = %v, want %v", err, ErrUnexpectedFrameSize)
 	}
-	enc.setErr(errors.New("boom"))
+	enc.setErr(errVideoFrameBoom)
 	if _, err := enc.EncodeFrame([]byte("good")); err == nil || !strings.Contains(err.Error(), "encoder failed") {
 		t.Fatalf("EncodeFrame(processErr) error = %v", err)
 	}
 
 	dec := &ffmpegDecoder{stderr: bytes.NewBufferString("decoder failed")}
-	dec.setErr(errors.New("boom"))
+	dec.setErr(errVideoFrameBoom)
 	if err := dec.PushSample([]byte("sample")); err == nil || !strings.Contains(err.Error(), "decoder failed") {
 		t.Fatalf("PushSample(processErr) error = %v", err)
 	}
@@ -199,6 +206,7 @@ func TestFFmpegProcessErrAndFrameValidation(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestFFmpegReadersAndSampleWriters(t *testing.T) {
 	var ivf bytes.Buffer
 	if err := writeIVFHeader(&ivf, "VP80", 2, 2, 30); err != nil {

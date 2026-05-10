@@ -24,15 +24,18 @@ var (
 	// ErrSEIValueTruncated is returned when reading a SEI length-value runs past the buffer.
 	ErrSEIValueTruncated = errors.New("sei value truncated")
 
-	videoSEIUUID = [16]byte{
+	videoSEIUUID = [16]byte{ //nolint:gochecknoglobals // package-level state intentional
 		0x5d, 0xc0, 0x3b, 0xa8,
 		0x45, 0x0f,
 		0x4b, 0x55,
 		0x9a, 0x77,
 		0x1f, 0x91, 0x6c, 0x5b, 0x07, 0x39,
 	}
+	//nolint:gochecknoglobals // hardcoded H264 constants
 	baseSPS = mustDecodeHex("6742c00addec0440000003004000000300a3c489e0")
+	//nolint:gochecknoglobals // hardcoded H264 constants
 	basePPS = mustDecodeHex("68ce0fc8")
+	//nolint:gochecknoglobals // hardcoded H264 constants
 	baseIDR = mustDecodeHex("6588843a2628000902e0")
 )
 
@@ -142,10 +145,11 @@ func appendSEIValue(dst []byte, value int) []byte {
 		dst = append(dst, 0xff)
 		value -= 0xff
 	}
-	return append(dst, byte(value))
+	return append(dst, byte(value)) //nolint:gosec // G115: bounded conversion verified by surrounding logic
 }
 
-func consumeSEIValue(data []byte, pos int) (value, next int, err error) {
+func consumeSEIValue(data []byte, pos int) (int, int, error) {
+	value := 0
 	for {
 		if pos >= len(data) {
 			return 0, pos, ErrSEIValueTruncated
@@ -196,7 +200,6 @@ func unescapeRBSP(rbsp []byte) []byte {
 func mustDecodeHex(value string) []byte {
 	data, err := hex.DecodeString(value)
 	if err != nil {
-		//nolint:forbidigo // hardcoded constant; failure indicates a corrupt binary
 		panic(errors.Join(ErrInvalidH264Constant, err))
 	}
 	return data

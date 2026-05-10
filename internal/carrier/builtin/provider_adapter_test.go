@@ -9,6 +9,13 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	errConnectBoom = errors.New("connect boom")
+	errSendBoom    = errors.New("send boom")
+	errCloseBoom   = errors.New("close boom")
+	errTrackBoom   = errors.New("track boom")
+)
+
 type stubProvider struct {
 	connectErr         error
 	sendErr            error
@@ -114,9 +121,9 @@ func TestProviderByteStreamWrapsProviderAndCallbacks(t *testing.T) {
 
 func TestProviderByteStreamWrapsErrors(t *testing.T) {
 	prov := &stubProvider{
-		connectErr: errors.New("connect boom"),
-		sendErr:    errors.New("send boom"),
-		closeErr:   errors.New("close boom"),
+		connectErr: errConnectBoom,
+		sendErr:    errSendBoom,
+		closeErr:   errCloseBoom,
 	}
 	stream := &providerByteStream{provider: prov}
 
@@ -162,7 +169,7 @@ func TestProviderSessionOpenByteStreamAndVideoTrack(t *testing.T) {
 }
 
 func TestProviderVideoTrackWrapsOperations(t *testing.T) {
-	prov := &stubProvider{canSend: true, addTrackErr: errors.New("track boom")}
+	prov := &stubProvider{canSend: true, addTrackErr: errTrackBoom}
 	track := &providerVideoTrack{provider: prov}
 
 	called := false
@@ -184,8 +191,8 @@ func TestProviderVideoTrackWrapsOperations(t *testing.T) {
 
 func TestProviderVideoTrackWrapsConnectCloseErrors(t *testing.T) {
 	prov := &stubProvider{
-		connectErr: errors.New("connect boom"),
-		closeErr:   errors.New("close boom"),
+		connectErr: errConnectBoom,
+		closeErr:   errCloseBoom,
 	}
 	track := &providerVideoTrack{provider: prov}
 
