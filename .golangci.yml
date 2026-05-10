@@ -28,7 +28,9 @@ output:
 
 linters:
   default: all
-  disable: []
+  disable:
+    - wsl
+    - gomodguard
   settings:
     errcheck:
       check-type-assertions: true
@@ -231,9 +233,9 @@ linters:
       block-size: 1
 
     wsl_v5:
-      allow-first-in-block: false
+      allow-first-in-block: true
       allow-whole-block: false
-      branch-max-lines: 1
+      branch-max-lines: 2
 
     mnd:
       checks:
