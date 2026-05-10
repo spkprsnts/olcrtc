@@ -257,6 +257,12 @@ echo "[*] Cleaning workspace..."
 rm -rf $WORK_DIR
 mkdir -p $WORK_DIR
 
+CACHE_DIR="${OLCRTC_CACHE_DIR:-$HOME/.cache/olcrtc}"
+GOMOD_CACHE="$CACHE_DIR/gomod"
+GO_BUILD_CACHE="$CACHE_DIR/gobuild"
+mkdir -p "$GOMOD_CACHE" "$GO_BUILD_CACHE"
+echo "[*] Using Go cache: $CACHE_DIR"
+
 echo "[*] Cloning repository..."
 git clone --depth 1 --recurse-submodules --branch "$BRANCH" $REPO_URL $WORK_DIR
 
@@ -266,6 +272,8 @@ podman pull $IMAGE_NAME
 echo "[*] Building OlcRTC..."
 podman run --rm \
     -v $WORK_DIR:/app:Z \
+    -v $GOMOD_CACHE:/go/pkg/mod:Z \
+    -v $GO_BUILD_CACHE:/root/.cache/go-build:Z \
     -w /app \
     $IMAGE_NAME \
     sh -c "go mod tidy && go build -o olcrtc cmd/olcrtc/main.go"
@@ -349,7 +357,28 @@ elif [ "$TRANSPORT" = "videochannel" ]; then
     fi
 fi
 
-echo "uri: olcrtc://$CARRIER?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY%$CLIENT_ID\$$sub_configname"
+OLC_URI="olcrtc://$CARRIER?${TRANSPORT}${TRANSPORT_PAYLOAD}@$ROOM_ID#$KEY%$CLIENT_ID\$$sub_configname"
+echo "uri: $OLC_URI"
+echo ""
+
+GR_BIN="$WORK_DIR/gr"
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+esac
+GR_URL="https://github.com/zarazaex69/gr/releases/latest/download/gr-${OS}-${ARCH}"
+
+if curl -fsSL "$GR_URL" -o "$GR_BIN" 2>/dev/null; then
+    chmod +x "$GR_BIN"
+    echo "[*] QR code for your URI (scan with olcbox):"
+    echo ""
+    "$GR_BIN" "$OLC_URI" 2>/dev/null || echo "[!] QR generation failed"
+    echo ""
+else
+    echo "[!] Could not download gr ($GR_URL), skipping QR"
+fi
 
 if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
     echo "SOCKS5 proxy:   $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
