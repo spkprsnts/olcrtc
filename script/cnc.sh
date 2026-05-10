@@ -144,6 +144,16 @@ echo ""
 read -p "SOCKS5 port [default: 8808]: " PORT_INPUT
 SOCKS_PORT=${PORT_INPUT:-8808}
 
+echo ""
+read -p "SOCKS5 username (leave empty to disable auth): " SOCKS_USER_INPUT
+SOCKS_USER=${SOCKS_USER_INPUT:-}
+
+if [ -n "$SOCKS_USER" ]; then
+    read -s -p "SOCKS5 password: " SOCKS_PASS_INPUT
+    echo ""
+    SOCKS_PASS=${SOCKS_PASS_INPUT:-}
+fi
+
 TRANSPORT_ARGS=()
 
 if [ "$TRANSPORT" = "videochannel" ]; then
@@ -261,6 +271,11 @@ if [ ! -f "$WORK_DIR/olcrtc" ]; then
     exit 1
 fi
 
+AUTH_ARGS=()
+if [ -n "$SOCKS_USER" ]; then
+    AUTH_ARGS+=(-socks-user "$SOCKS_USER" -socks-pass "$SOCKS_PASS")
+fi
+
 echo "[*] Starting OlcRTC client..."
 podman run -d \
     --name $CONTAINER_NAME \
@@ -271,7 +286,7 @@ podman run -d \
     $IMAGE_NAME \
     ./olcrtc -mode cnc -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
-        -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}"
+        -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}" "${AUTH_ARGS[@]}"
 
 sleep 2
 
@@ -283,7 +298,11 @@ echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
+if [ -n "$SOCKS_USER" ]; then
+echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT (auth: $SOCKS_USER)"
+else
 echo "SOCKS5 proxy:   $SOCKS_IP:$SOCKS_PORT"
+fi
 echo ""
 echo "View logs:"
 echo "  podman logs -f $CONTAINER_NAME"
@@ -292,6 +311,10 @@ echo "Stop client:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Test proxy:"
+if [ -n "$SOCKS_USER" ]; then
+echo "  export all_proxy=socks5h://$SOCKS_USER:$SOCKS_PASS@$SOCKS_IP:$SOCKS_PORT"
+else
 echo "  export all_proxy=socks5h://$SOCKS_IP:$SOCKS_PORT"
+fi
 echo "  curl -fsSL https://ifconfig.me"
 echo ""
