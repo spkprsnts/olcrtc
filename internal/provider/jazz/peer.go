@@ -208,7 +208,7 @@ func (p *Peer) waitForReady(ctx context.Context, dcReady chan struct{}) error {
 		case <-time.After(30 * time.Second):
 			return provider.ErrDataChannelTimeout
 		case <-ctx.Done():
-			return fmt.Errorf("connect cancelled: %w", ctx.Err())
+			return fmt.Errorf("connect canceled: %w", ctx.Err())
 		}
 	}
 	return p.waitForMediaReady(ctx, 30*time.Second)

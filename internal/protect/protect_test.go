@@ -101,7 +101,7 @@ func TestDialContextAndProxyDialer(t *testing.T) {
 
 	accepted := make(chan struct{}, 2)
 	go func() {
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			conn, err := ln.Accept()
 			if err != nil {
 				return

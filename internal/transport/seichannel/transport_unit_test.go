@@ -12,6 +12,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	errBoom     = errors.New("boom")
+	errOpenBoom = errors.New("open boom")
+)
+
 type fakeVideoSession struct {
 	stream *fakeVideoStream
 	err    error
@@ -67,7 +72,7 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 		return &fakeVideoSession{stream: stream}, nil
 	})
 
-	trIface, err := New(context.Background(), transport.Config{
+	trIface, err := New(t.Context(), transport.Config{
 		Carrier:         name,
 		SEIFPS:          40,
 		SEIBatchSize:    3,
@@ -77,7 +82,10 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	tr := trIface.(*streamTransport)
+	tr, ok := trIface.(*streamTransport)
+	if !ok {
+		t.Fatalf("New() returned %T, want *streamTransport", trIface)
+	}
 	if !stream.trackAdded || stream.trackCB == nil {
 		t.Fatal("New() did not attach track and handler")
 	}
@@ -112,7 +120,7 @@ func TestNewConnectCallbacksAndFeatures(t *testing.T) {
 
 func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("seichannel-create-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return nil, errors.New("boom")
+		return nil, errBoom
 	})
 	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" {
 		t.Fatalf("New() error = %v", err)
@@ -126,7 +134,7 @@ func TestNewErrorPaths(t *testing.T) {
 	}
 
 	carrier.Register("seichannel-open-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return &fakeVideoSession{err: errors.New("open boom")}, nil
+		return &fakeVideoSession{err: errOpenBoom}, nil
 	})
 	if _, err := New(context.Background(), transport.Config{Carrier: "seichannel-open-fails"}); err == nil || err.Error() != "open video track: open boom" {
 		t.Fatalf("New() error = %v", err)

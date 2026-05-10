@@ -169,7 +169,8 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		batchSize:     batchSize,
 	}
 
-	if err := stream.AddTrack(track); err != nil {
+	err = stream.AddTrack(track)
+	if err != nil {
 		return nil, fmt.Errorf("attach local video track: %w", err)
 	}
 	stream.SetTrackHandler(tr.handleRemoteTrack)
@@ -351,9 +352,11 @@ func (p *streamTransport) writeBatch(idle []byte) bool {
 			if i > 0 {
 				return true
 			}
+			//nolint:errcheck,gosec // best-effort idle keepalive frame
 			_ = p.track.WriteSample(media.Sample{Data: idle, Duration: frameInterval})
 			return true
 		}
+		//nolint:errcheck,gosec // best-effort sample write
 		_ = p.track.WriteSample(media.Sample{Data: buildVideoAccessUnit(payload), Duration: frameInterval})
 	}
 	return true
@@ -512,6 +515,7 @@ func (p *streamTransport) handleInboundFrame(frame transportFrame) {
 }
 
 func (p *streamTransport) sendAck(seq, crc uint32) {
+	//nolint:dogsled,errcheck // ack delivery is best-effort
 	_ = p.enqueueFrame(encodeAckFrame(seq, crc), true)
 }
 
@@ -537,10 +541,7 @@ func fragmentPayload(data []byte, maxSize int) [][]byte {
 
 	out := make([][]byte, 0, (len(data)+maxSize-1)/maxSize)
 	for start := 0; start < len(data); start += maxSize {
-		end := start + maxSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(start+maxSize, len(data))
 
 		chunk := make([]byte, end-start)
 		copy(chunk, data[start:end])
