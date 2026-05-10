@@ -93,6 +93,11 @@
 |------|----------|:------------:|
 | `-socks-host` | На каком адресе поднять SOCKS5 | `127.0.0.1` |
 | `-socks-port` | На каком порту поднять SOCKS5 | `1080` |
+| `-socks-user` | Логин для входящих SOCKS5-подключений (необязательно) | - |
+| `-socks-pass` | Пароль для входящих SOCKS5-подключений (необязательно) | - |
+
+Если `-socks-user` не задан - аутентификация отключена (любой локальный клиент может подключиться).  
+Если задан - клиент принимает только подключения с правильным логином и паролем (RFC 1929).
 
 ---
 
@@ -164,6 +169,25 @@ ROOM_ID=$(./olcrtc -mode gen -carrier wbstream -dns 1.1.1.1:53 -amount 1 -data d
   -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
   -socks-host 127.0.0.1 -socks-port 1080
 ```
+
+### wbstream + datachannel + SOCKS5 аутентификация
+
+```sh
+# клиент с логином и паролем на прокси
+./olcrtc -mode cnc -carrier wbstream -transport datachannel \
+  -id "$ROOM_ID" -client-id <client-id> -key <hex-key> -link direct -data data -dns 1.1.1.1:53 \
+  -socks-host 127.0.0.1 -socks-port 1080 \
+  -socks-user myuser -socks-pass mypass
+```
+
+Использование:
+```sh
+curl --socks5-hostname myuser:mypass@127.0.0.1:1080 https://icanhazip.com
+# или
+export all_proxy=socks5h://myuser:mypass@127.0.0.1:1080
+```
+
+---
 
 ### telemost + vp8channel
 

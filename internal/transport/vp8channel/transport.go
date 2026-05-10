@@ -71,7 +71,7 @@ var vp8Keepalive = []byte{
 
 // KCP data frames are disguised as valid VP8 frames so Telemost SFU lets them
 // through. The SFU validates the VP8 bitstream and drops frames that don't
-// look like real VP8 — so we prepend the keepalive keyframe and append our
+// look like real VP8 - so we prepend the keepalive keyframe and append our
 // header + payload after it. Wire layout:
 //
 //	[0..20]    = vp8Keepalive (valid VP8 keyframe, passes SFU inspection)

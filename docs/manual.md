@@ -228,6 +228,27 @@ Room ID нужно передать клиенту.
 SOCKS5 server listening on 127.0.0.1:1080
 ```
 
+Если нужно защитить прокси логином и паролем (например на машине с несколькими пользователями), добавь `-socks-user` и `-socks-pass`:
+
+```sh
+./build/olcrtc-linux-amd64 \
+  -mode cnc \
+  -carrier wbstream \
+  -transport datachannel \
+  -id abc123xyz \
+  -client-id "$CLIENT_ID" \
+  -key <hex-key> \
+  -link direct \
+  -dns 1.1.1.1:53 \
+  -data data \
+  -socks-host 127.0.0.1 \
+  -socks-port 1080 \
+  -socks-user myuser \
+  -socks-pass mypass
+```
+
+Без этих флагов аутентификация отключена - поведение прежнее.
+
 ---
 
 ## Шаг 10: Проверить
