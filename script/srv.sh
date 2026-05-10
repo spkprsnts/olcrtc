@@ -10,11 +10,16 @@ IMAGE_NAME="docker.io/library/golang:1.26-alpine"
 REPO_URL="https://github.com/openlibrecommunity/olcrtc.git"
 WORK_DIR="/tmp/olcrtc-deploy-$PODMAN_ID"
 BRANCH="master"
+NO_CACHE=0
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --branch=*)
             BRANCH="${1#*=}"
+            shift
+            ;;
+        --no-cache)
+            NO_CACHE=1
             shift
             ;;
         *)
@@ -260,6 +265,12 @@ mkdir -p $WORK_DIR
 CACHE_DIR="${OLCRTC_CACHE_DIR:-$HOME/.cache/olcrtc}"
 GOMOD_CACHE="$CACHE_DIR/gomod"
 GO_BUILD_CACHE="$CACHE_DIR/gobuild"
+
+if [ "$NO_CACHE" = "1" ]; then
+    echo "[*] --no-cache: purging Go cache at $CACHE_DIR"
+    rm -rf "$GOMOD_CACHE" "$GO_BUILD_CACHE"
+fi
+
 mkdir -p "$GOMOD_CACHE" "$GO_BUILD_CACHE"
 echo "[*] Using Go cache: $CACHE_DIR"
 
