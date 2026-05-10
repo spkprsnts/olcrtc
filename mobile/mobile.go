@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -31,24 +34,34 @@ type LogWriter interface {
 }
 
 var (
-	errAlreadyRunning     = errors.New("olcRTC already running")
-	errCarrierRequired    = errors.New("carrier is required")
-	errRoomIDRequired     = errors.New("roomID is required")
-	errClientIDRequired   = errors.New("clientID is required")
-	errKeyHexRequired     = errors.New("keyHex is required")
-	errNotRunning         = errors.New("olcRTC is not running")
-	errStoppedBeforeReady = errors.New("olcRTC stopped before becoming ready")
-	errStartTimedOut      = errors.New("olcRTC start timed out")
+	errAlreadyRunning       = errors.New("olcRTC already running")
+	errCarrierRequired      = errors.New("carrier is required")
+	errRoomIDRequired       = errors.New("roomID is required")
+	errClientIDRequired     = errors.New("clientID is required")
+	errKeyHexRequired       = errors.New("keyHex is required")
+	errNotRunning           = errors.New("olcRTC is not running")
+	errStoppedBeforeReady   = errors.New("olcRTC stopped before becoming ready")
+	errStartTimedOut        = errors.New("olcRTC start timed out")
+	errHTTPPingTimedOut     = errors.New("HTTP ping timed out")
+	errUnexpectedHTTPStatus = errors.New("unexpected HTTP status")
 )
 
 const (
-	defaultLink      = "direct"
-	defaultTransport = "vp8channel"
-	dataTransport    = "datachannel"
-	defaultDNSServer = "1.1.1.1:53"
-	carrierWBStream  = "wbstream"
-	carrierJazz      = "jazz"
-	roomURLAny       = "any"
+	defaultLink        = "direct"
+	defaultTransport   = "vp8channel"
+	dataTransport      = "datachannel"
+	defaultDNSServer   = "1.1.1.1:53"
+	defaultHTTPPingURL = "https://www.google.com/generate_204"
+	carrierWBStream    = "wbstream"
+	carrierJazz        = "jazz"
+	roomURLAny         = "any"
+)
+
+const (
+	httpPingWarmupTimeout = 1500 * time.Millisecond
+	httpPingSampleTimeout = 1500 * time.Millisecond
+	httpPingSamples       = 3
+	httpPingSampleDelay   = 80 * time.Millisecond
 )
 
 //nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
@@ -257,6 +270,270 @@ func Check(
 		waitForCheckDone(doneCh)
 		return 0, errStartTimedOut
 	}
+}
+
+// Ping starts an isolated short-lived client, waits until its SOCKS listener is ready,
+// performs HTTP requests through that SOCKS tunnel, and returns HTTP latency in milliseconds.
+//
+// The returned value does not include RTC startup time. It measures only HTTP request latency
+// after the tunnel is ready.
+func Ping(
+	carrierName, transportName, roomID, clientID, keyHex string,
+	socksPort int,
+	timeoutMillis int,
+	pingURL string,
+	vp8FPS int,
+	vp8BatchSize int,
+) (int64, error) {
+	registerDefaults()
+	carrierName = normalizeCarrier(carrierName)
+	transportName = normalizeTransport(transportName)
+
+	if err := validateStartArgs(carrierName, roomID, clientID, keyHex); err != nil {
+		return 0, err
+	}
+
+	if timeoutMillis <= 0 {
+		timeoutMillis = 10000
+	}
+	if pingURL == "" {
+		pingURL = defaultHTTPPingURL
+	}
+
+	ctx, cancelFunc := context.WithTimeout(
+		context.Background(),
+		time.Duration(timeoutMillis)*time.Millisecond,
+	)
+	defer cancelFunc()
+
+	readyCh := make(chan struct{})
+	doneCh := make(chan error, 1)
+
+	var readyOnce sync.Once
+
+	go func() {
+		doneCh <- runClientWithReady(
+			ctx,
+			defaultLink,
+			transportName,
+			carrierName,
+			buildRoomURL(carrierName, roomID),
+			keyHex,
+			clientID,
+			fmt.Sprintf("127.0.0.1:%d", socksPort),
+			defaultDNSServer,
+			"",
+			"",
+			func() {
+				readyOnce.Do(func() {
+					close(readyCh)
+				})
+			},
+			0,
+			0,
+			0,
+			"",
+			"",
+			0,
+			"",
+			"",
+			0,
+			0,
+			clampAtLeastOne(vp8FPS, 120),
+			clampAtLeastOne(vp8BatchSize, 64),
+			0,
+			0,
+			0,
+			0,
+		)
+	}()
+
+	select {
+	case <-readyCh:
+		elapsed, err := httpPingThroughSocks(
+			ctx,
+			fmt.Sprintf("127.0.0.1:%d", socksPort),
+			pingURL,
+		)
+
+		cancelFunc()
+		waitForCheckDone(doneCh)
+
+		if err != nil {
+			return 0, err
+		}
+
+		return elapsed, nil
+
+	case err := <-doneCh:
+		if err != nil {
+			return 0, err
+		}
+
+		return 0, errStoppedBeforeReady
+
+	case <-ctx.Done():
+		cancelFunc()
+		waitForCheckDone(doneCh)
+
+		return 0, errStartTimedOut
+	}
+}
+
+func httpPingThroughSocks(
+	parentCtx context.Context,
+	socksAddr string,
+	targetURL string,
+) (int64, error) {
+	normalizedURL, err := normalizeHTTPPingURL(targetURL)
+	if err != nil {
+		return 0, err
+	}
+
+	client, closeClient := newHTTPPingClient(socksAddr)
+	defer closeClient()
+
+	// Warm up the SOCKS/TCP/TLS path. This request is intentionally not included
+	// in the returned latency.
+	_, _ = singleHTTPPingRequest(
+		parentCtx,
+		client,
+		normalizedURL,
+		httpPingWarmupTimeout,
+	)
+
+	return bestHTTPPingSample(parentCtx, client, normalizedURL)
+}
+
+func normalizeHTTPPingURL(targetURL string) (string, error) {
+	if targetURL == "" {
+		targetURL = defaultHTTPPingURL
+	}
+
+	if _, err := url.ParseRequestURI(targetURL); err != nil {
+		return "", fmt.Errorf("parse HTTP ping URL: %w", err)
+	}
+
+	return targetURL, nil
+}
+
+func newHTTPPingClient(socksAddr string) (*http.Client, func()) {
+	proxyURL := &url.URL{
+		Scheme: "socks5",
+		Host:   socksAddr,
+	}
+
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+
+		DisableKeepAlives:   false,
+		MaxIdleConns:        4,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     10 * time.Second,
+
+		ForceAttemptHTTP2:     false,
+		TLSHandshakeTimeout:   httpPingSampleTimeout,
+		ResponseHeaderTimeout: httpPingSampleTimeout,
+		ExpectContinueTimeout: 500 * time.Millisecond,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   httpPingSampleTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	return client, transport.CloseIdleConnections
+}
+
+func bestHTTPPingSample(
+	parentCtx context.Context,
+	client *http.Client,
+	targetURL string,
+) (int64, error) {
+	var best int64
+	var lastErr error
+
+	for i := range httpPingSamples {
+		elapsed, err := singleHTTPPingRequest(
+			parentCtx,
+			client,
+			targetURL,
+			httpPingSampleTimeout,
+		)
+		if err != nil {
+			lastErr = err
+		} else {
+			best = bestPositiveLatency(best, elapsed)
+		}
+
+		if i < httpPingSamples-1 {
+			time.Sleep(httpPingSampleDelay)
+		}
+	}
+
+	if best > 0 {
+		return best, nil
+	}
+
+	if lastErr != nil {
+		return 0, lastErr
+	}
+
+	return 0, errHTTPPingTimedOut
+}
+
+func bestPositiveLatency(currentBest, next int64) int64 {
+	if next <= 0 {
+		return currentBest
+	}
+
+	if currentBest == 0 || next < currentBest {
+		return next
+	}
+
+	return currentBest
+}
+
+func singleHTTPPingRequest(
+	parentCtx context.Context,
+	client *http.Client,
+	targetURL string,
+	timeout time.Duration,
+) (int64, error) {
+	ctx, cancel := context.WithTimeout(parentCtx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create HTTP ping request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Olcbox-Android")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Cache-Control", "no-cache")
+
+	startedAt := time.Now()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("perform HTTP ping request: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	elapsed := time.Since(startedAt).Milliseconds()
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode > http.StatusPermanentRedirect {
+		return 0, fmt.Errorf("%w: %d", errUnexpectedHTTPStatus, resp.StatusCode)
+	}
+
+	return elapsed, nil
 }
 
 func startWithConfig(
