@@ -268,7 +268,14 @@ GO_BUILD_CACHE="$CACHE_DIR/gobuild"
 
 if [ "$NO_CACHE" = "1" ]; then
     echo "[*] --no-cache: purging Go cache at $CACHE_DIR"
-    rm -rf "$GOMOD_CACHE" "$GO_BUILD_CACHE"
+    chmod -R u+w "$GOMOD_CACHE" "$GO_BUILD_CACHE" 2>/dev/null || true
+    if ! rm -rf "$GOMOD_CACHE" "$GO_BUILD_CACHE" 2>/dev/null; then
+        echo "[*] Falling back to in-container purge (files owned by container UID)..."
+        podman run --rm \
+            -v "$CACHE_DIR":/cache:Z \
+            "$IMAGE_NAME" \
+            sh -c 'rm -rf /cache/gomod /cache/gobuild'
+    fi
 fi
 
 mkdir -p "$GOMOD_CACHE" "$GO_BUILD_CACHE"
