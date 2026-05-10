@@ -37,7 +37,7 @@ Community android client: [alananisimov/olcbox](https://github.com/alananisimov/
 
 [Client subscription format](docs/sub.md)
 
-[About all, read before ask](docs/about.md)
+[Read before ask](docs/about.md)
 
 
 
