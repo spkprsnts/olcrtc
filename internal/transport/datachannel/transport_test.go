@@ -9,6 +9,14 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
+var (
+	errDCBoom        = errors.New("boom")
+	errDCOpenBoom    = errors.New("open boom")
+	errDCConnectBoom = errors.New("connect boom")
+	errDCSendBoom    = errors.New("send boom")
+	errDCCloseBoom   = errors.New("close boom")
+)
+
 type stubSession struct {
 	stream    carrier.ByteStream
 	streamErr error
@@ -54,6 +62,7 @@ func (s *stubByteStream) SetEndedCallback(cb func(string))  { s.endedCB = cb }
 func (s *stubByteStream) WatchConnection(context.Context)   { s.watched = true }
 func (s *stubByteStream) CanSend() bool                     { return s.canSend }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewAndFeatures(t *testing.T) {
 	stream := &stubByteStream{canSend: true}
 	carrier.Register("datachannel-test-new-and-features", func(context.Context, carrier.Config) (carrier.Session, error) {
@@ -89,7 +98,7 @@ func TestNewAndFeatures(t *testing.T) {
 	}
 
 	features := tr.Features()
-	if !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize != defaultMaxPayloadSize {
+	if !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize != defaultMaxPayloadSize { //nolint:lll // long test description
 		t.Fatalf("Features() = %+v", features)
 	}
 	if err := tr.Close(); err != nil {
@@ -99,32 +108,32 @@ func TestNewAndFeatures(t *testing.T) {
 
 func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("datachannel-fail-create", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return nil, errors.New("boom")
+		return nil, errDCBoom
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-fail-create"}); err == nil || err.Error() != "create carrier transport: boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-fail-create"}); err == nil || err.Error() != "create carrier transport: boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 
 	carrier.Register("datachannel-no-stream", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return &nonByteStreamSession{}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-no-stream"}); !errors.Is(err, carrier.ErrByteStreamUnsupported) {
+	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-no-stream"}); !errors.Is(err, carrier.ErrByteStreamUnsupported) { //nolint:lll // long test description
 		t.Fatalf("New() error = %v, want %v", err, carrier.ErrByteStreamUnsupported)
 	}
 
 	carrier.Register("datachannel-open-stream-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return &stubSession{streamErr: errors.New("open boom")}, nil
+		return &stubSession{streamErr: errDCOpenBoom}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-open-stream-fails"}); err == nil || err.Error() != "open byte stream: open boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "datachannel-open-stream-fails"}); err == nil || err.Error() != "open byte stream: open boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 }
 
 func TestStreamTransportWrapsErrors(t *testing.T) {
 	tr := &streamTransport{stream: &stubByteStream{
-		connectErr: errors.New("connect boom"),
-		sendErr:    errors.New("send boom"),
-		closeErr:   errors.New("close boom"),
+		connectErr: errDCConnectBoom,
+		sendErr:    errDCSendBoom,
+		closeErr:   errDCCloseBoom,
 	}}
 
 	if err := tr.Connect(context.Background()); err == nil || err.Error() != "stream connect: connect boom" {

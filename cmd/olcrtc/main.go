@@ -25,9 +25,9 @@ const modeGen = "gen"
 // ErrDataDirRequired is returned when no data directory is specified.
 var ErrDataDirRequired = errors.New("data directory required (use -data data)")
 
-var runSession = session.Run
+var runSession = session.Run //nolint:gochecknoglobals // package-level state intentional
 
-var runGen = execGen
+var runGen = execGen //nolint:gochecknoglobals // package-level state intentional
 
 type config struct {
 	mode            string

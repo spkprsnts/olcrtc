@@ -12,6 +12,8 @@ import (
 	cryptopkg "github.com/openlibrecommunity/olcrtc/internal/crypto"
 )
 
+var errMuxBoom = errors.New("boom")
+
 type stubLink struct {
 	mu        sync.Mutex
 	canSend   bool
@@ -163,7 +165,7 @@ func TestWriteReturnsErrClosedWhileWaiting(t *testing.T) {
 
 func TestWriteWrapsSendError(t *testing.T) {
 	cipher := newTestCipher(t)
-	conn := New(&stubLink{canSend: true, sendErr: errors.New("boom")}, cipher)
+	conn := New(&stubLink{canSend: true, sendErr: errMuxBoom}, cipher)
 
 	_, err := conn.Write([]byte("payload"))
 	if err == nil || err.Error() != "send: boom" {

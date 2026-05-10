@@ -9,6 +9,13 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
 
+var (
+	errDirectBoom        = errors.New("boom")
+	errDirectConnectBoom = errors.New("connect boom")
+	errDirectSendBoom    = errors.New("send boom")
+	errDirectCloseBoom   = errors.New("close boom")
+)
+
 type stubTransport struct {
 	connectErr error
 	sendErr    error
@@ -41,6 +48,7 @@ func (s *stubTransport) WatchConnection(context.Context)   { s.watched = true }
 func (s *stubTransport) CanSend() bool                     { return s.canSend }
 func (s *stubTransport) Features() transport.Features      { return transport.Features{} }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewForwardsConfigAndMethods(t *testing.T) {
 	name := "direct-test-forward"
 	var seen transport.Config
@@ -109,7 +117,7 @@ func TestNewForwardsConfigAndMethods(t *testing.T) {
 func TestNewWrapsFactoryError(t *testing.T) {
 	name := "direct-test-error"
 	transport.Register(name, func(context.Context, transport.Config) (transport.Transport, error) {
-		return nil, errors.New("boom")
+		return nil, errDirectBoom
 	})
 
 	_, err := New(context.Background(), link.Config{Transport: name})
@@ -120,9 +128,9 @@ func TestNewWrapsFactoryError(t *testing.T) {
 
 func TestDirectLinkWrapsTransportErrors(t *testing.T) {
 	ln := &directLink{transport: &stubTransport{
-		connectErr: errors.New("connect boom"),
-		sendErr:    errors.New("send boom"),
-		closeErr:   errors.New("close boom"),
+		connectErr: errDirectConnectBoom,
+		sendErr:    errDirectSendBoom,
+		closeErr:   errDirectCloseBoom,
 	}}
 
 	if err := ln.Connect(context.Background()); err == nil || err.Error() != "transport connect: connect boom" {

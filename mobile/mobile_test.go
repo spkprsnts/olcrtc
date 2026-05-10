@@ -48,7 +48,12 @@ func resetMobileGlobals(t *testing.T) {
 	logger.SetVerbose(false)
 }
 
-var clientRunWithReady = runClientWithReady
+var clientRunWithReady = runClientWithReady //nolint:gochecknoglobals // package-level state intentional
+
+var (
+	errMobileCheckFailed = errors.New("check failed")
+	errMobileRunFailed   = errors.New("run failed")
+)
 
 func TestProtectorAndLogging(t *testing.T) {
 	resetMobileGlobals(t)
@@ -96,6 +101,7 @@ func TestDefaultsAndSetters(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNormalizeBuildRoomAndClamp(t *testing.T) {
 	tests := map[string]string{
 		"datachannel": dataTransport,
@@ -133,28 +139,29 @@ func TestNormalizeBuildRoomAndClamp(t *testing.T) {
 func TestStartValidation(t *testing.T) {
 	resetMobileGlobals(t)
 
-	if err := startWithConfig("", dataTransport, "room", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errCarrierRequired) {
+	if err := startWithConfig("", dataTransport, "room", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errCarrierRequired) { //nolint:lll // long test description
 		t.Fatalf("startWithConfig(missing carrier) = %v", err)
 	}
-	if err := startWithConfig("telemost", dataTransport, "", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errRoomIDRequired) {
+	if err := startWithConfig("telemost", dataTransport, "", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errRoomIDRequired) { //nolint:lll // long test description
 		t.Fatalf("startWithConfig(missing room) = %v", err)
 	}
-	if err := startWithConfig("jazz", dataTransport, "", "", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errClientIDRequired) {
+	if err := startWithConfig("jazz", dataTransport, "", "", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errClientIDRequired) { //nolint:lll // long test description
 		t.Fatalf("startWithConfig(missing client) = %v", err)
 	}
-	if err := startWithConfig("jazz", dataTransport, "", "client", "", 1080, "", "", mobileConfig{}); !errors.Is(err, errKeyHexRequired) {
+	if err := startWithConfig("jazz", dataTransport, "", "client", "", 1080, "", "", mobileConfig{}); !errors.Is(err, errKeyHexRequired) { //nolint:lll // long test description
 		t.Fatalf("startWithConfig(missing key) = %v", err)
 	}
 
 	mu.Lock()
 	cancel = func() {}
 	mu.Unlock()
-	if err := startWithConfig("jazz", dataTransport, "", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errAlreadyRunning) {
+	if err := startWithConfig("jazz", dataTransport, "", "client", "key", 1080, "", "", mobileConfig{}); !errors.Is(err, errAlreadyRunning) { //nolint:lll // long test description
 		t.Fatalf("startWithConfig(running) = %v", err)
 	}
 	resetMobileGlobals(t)
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 	resetMobileGlobals(t)
 	t.Cleanup(func() {
@@ -163,26 +170,26 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 
 	runClientWithReady = func(
 		ctx context.Context,
-		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		linkName, transportName, carrierName, roomURL, _, clientID string,
 		localAddr string,
-		dnsServer, socksUser, socksPass string,
+		dnsServer, _, _ string,
 		onReady func(),
-		videoWidth int,
-		videoHeight int,
-		videoFPS int,
-		videoBitrate string,
-		videoHW string,
-		videoQRSize int,
-		videoQRRecovery string,
-		videoCodec string,
-		videoTileModule int,
-		videoTileRS int,
+		_ int,
+		_ int,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ int,
 		vp8FPS int,
 		vp8BatchSize int,
-		seiFPS int,
-		seiBatchSize int,
-		seiFragmentSize int,
-		seiAckTimeoutMS int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
 	) error {
 		if linkName != defaultLink || transportName != dataTransport || carrierName != carrierJazz ||
 			roomURL != "any" || clientID != "client" || localAddr != "127.0.0.1:1080" ||
@@ -210,6 +217,7 @@ func TestStartWithInjectedRunnerLifecycle(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 	resetMobileGlobals(t)
 	t.Cleanup(func() {
@@ -218,26 +226,26 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 
 	runClientWithReady = func(
 		ctx context.Context,
-		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
+		_, transportName, _, roomURL, _, _ string,
 		localAddr string,
-		dnsServer, socksUser, socksPass string,
+		_, socksUser, socksPass string,
 		onReady func(),
-		videoWidth int,
-		videoHeight int,
-		videoFPS int,
-		videoBitrate string,
-		videoHW string,
-		videoQRSize int,
-		videoQRRecovery string,
-		videoCodec string,
-		videoTileModule int,
-		videoTileRS int,
-		vp8FPS int,
-		vp8BatchSize int,
-		seiFPS int,
-		seiBatchSize int,
-		seiFragmentSize int,
-		seiAckTimeoutMS int,
+		_ int,
+		_ int,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
 	) error {
 		if transportName != defaultTransport || roomURL != "https://telemost.yandex.ru/j/room" ||
 			localAddr != "127.0.0.1:1081" || socksUser != "u" || socksPass != "p" {
@@ -259,26 +267,26 @@ func TestStartUsesDefaultsAndCheckWithInjectedRunner(t *testing.T) {
 
 	runClientWithReady = func(
 		ctx context.Context,
-		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
-		localAddr string,
-		dnsServer, socksUser, socksPass string,
+		_, transportName, _, _, _, _ string,
+		_ string,
+		_, _, _ string,
 		onReady func(),
-		videoWidth int,
-		videoHeight int,
-		videoFPS int,
-		videoBitrate string,
-		videoHW string,
-		videoQRSize int,
-		videoQRRecovery string,
-		videoCodec string,
-		videoTileModule int,
-		videoTileRS int,
+		_ int,
+		_ int,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ int,
 		vp8FPS int,
 		vp8BatchSize int,
-		seiFPS int,
-		seiBatchSize int,
-		seiFragmentSize int,
-		seiAckTimeoutMS int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
 	) error {
 		if transportName != dataTransport || vp8FPS != 1 || vp8BatchSize != 64 {
 			t.Fatalf("Check args mismatch: transport=%q vp8=%d/%d", transportName, vp8FPS, vp8BatchSize)
@@ -304,35 +312,35 @@ func TestCheckTimeoutAndRunError(t *testing.T) {
 
 	runClientWithReady = func(
 		ctx context.Context,
-		linkName, transportName, carrierName, roomURL, keyHex, clientID string,
-		localAddr string,
-		dnsServer, socksUser, socksPass string,
-		onReady func(),
-		videoWidth int,
-		videoHeight int,
-		videoFPS int,
-		videoBitrate string,
-		videoHW string,
-		videoQRSize int,
-		videoQRRecovery string,
-		videoCodec string,
-		videoTileModule int,
-		videoTileRS int,
-		vp8FPS int,
-		vp8BatchSize int,
-		seiFPS int,
-		seiBatchSize int,
-		seiFragmentSize int,
-		seiAckTimeoutMS int,
+		_, _, _, _, _, _ string,
+		_ string,
+		_, _, _ string,
+		_ func(),
+		_ int,
+		_ int,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ string,
+		_ string,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
+		_ int,
 	) error {
 		<-ctx.Done()
 		return nil
 	}
-	if _, err := Check("telemost", defaultTransport, "room", "client", "key", 1083, 1, 30, 1); !errors.Is(err, errStartTimedOut) {
+	if _, err := Check("telemost", defaultTransport, "room", "client", "key", 1083, 1, 30, 1); !errors.Is(err, errStartTimedOut) { //nolint:lll // long test description
 		t.Fatalf("Check(timeout) error = %v, want %v", err, errStartTimedOut)
 	}
 
-	want := errors.New("check failed")
+	want := errMobileCheckFailed
 	runClientWithReady = func(
 		context.Context,
 		string, string, string, string, string, string,
@@ -369,7 +377,7 @@ func TestWaitReadyStatesAndStop(t *testing.T) {
 	}
 
 	mu.Lock()
-	errRun = errors.New("run failed")
+	errRun = errMobileRunFailed
 	mu.Unlock()
 	if err := WaitReady(1); err == nil || err.Error() != "run failed" {
 		t.Fatalf("WaitReady(run err) = %v", err)

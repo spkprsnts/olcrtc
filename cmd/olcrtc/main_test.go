@@ -12,18 +12,21 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 )
 
+var errBoom = errors.New("boom")
+
+//nolint:cyclop // table-driven test naturally has many branches
 func TestToSessionConfig(t *testing.T) {
 	cfg := config{
 		mode:            "cnc",
-		link:            "direct",
+		link:            "direct", //nolint:goconst // test literal, repetition is intentional
 		transport:       "vp8channel",
-		carrier:         "jazz",
-		roomID:          "room",
-		clientID:        "client",
-		keyHex:          "key",
+		carrier:         "jazz", //nolint:goconst // test literal, repetition is intentional
+		roomID:          "room", //nolint:goconst // test literal, repetition is intentional
+		clientID:        "client", //nolint:goconst // test literal, repetition is intentional
+		keyHex:          "key", //nolint:goconst // test literal, repetition is intentional
 		socksHost:       "127.0.0.1",
 		socksPort:       1080,
-		dnsServer:       "1.1.1.1:53",
+		dnsServer:       "1.1.1.1:53", //nolint:goconst // test literal, repetition is intentional
 		socksProxyAddr:  "proxy",
 		socksProxyPort:  1081,
 		videoWidth:      640,
@@ -55,9 +58,10 @@ func TestToSessionConfig(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestParseFlagsFrom(t *testing.T) {
 	cfg, err := parseFlagsFrom([]string{
-		"-mode", "srv",
+		"-mode", "srv", //nolint:goconst // test literal, repetition is intentional
 		"-link", "direct",
 		"-transport", "vp8channel",
 		"-carrier", "telemost",
@@ -109,11 +113,11 @@ func TestParseFlagsFrom(t *testing.T) {
 func TestRunGenModeValidationErrors(t *testing.T) {
 	session.RegisterDefaults()
 
-	if err := runWithConfig(config{mode: "gen"}); err == nil {
+	if err := runWithConfig(config{mode: "gen"}); err == nil { //nolint:goconst // test literal, repetition is intentional
 		t.Fatal("runWithConfig(gen, no carrier) error = nil")
 	}
 
-	if err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53"}); err == nil {
+	if err := runWithConfig(config{mode: "gen", carrier: "wbstream", dnsServer: "1.1.1.1:53"}); err == nil { //nolint:goconst,lll // test literal, repetition is intentional
 		t.Fatal("runWithConfig(gen, amount=0) error = nil")
 	}
 }
@@ -268,7 +272,7 @@ func TestWaitForShutdown(t *testing.T) {
 		t.Fatalf("waitForShutdown(nil) error = %v", err)
 	}
 
-	want := errors.New("boom")
+	want := errBoom
 	errCh = make(chan error, 1)
 	errCh <- want
 	if err := waitForShutdown(errCh); !errors.Is(err, want) {

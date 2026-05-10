@@ -134,7 +134,7 @@ func (r *kcpRuntime) send(msg []byte) error {
 		return ErrKCPMessageTooLarge
 	}
 	var hdr [kcpLenPrefix]byte
-	binary.BigEndian.PutUint32(hdr[:], uint32(len(msg)))
+	binary.BigEndian.PutUint32(hdr[:], uint32(len(msg))) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()

@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+//nolint:maintidx // table-driven validation test naturally has many cases
 func TestValidate(t *testing.T) {
 	RegisterDefaults()
 
@@ -13,11 +14,11 @@ func TestValidate(t *testing.T) {
 		Mode:      modeSRV,
 		Link:      "direct",
 		Transport: "datachannel",
-		Carrier:   "telemost",
+		Carrier:   "telemost", //nolint:goconst // test literal, repetition is intentional
 		RoomID:    "room-1",
 		ClientID:  "client-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
-		DNSServer: "1.1.1.1:53",
+		DNSServer: "1.1.1.1:53", //nolint:goconst // test literal, repetition is intentional
 	}
 
 	tests := []struct {
@@ -30,7 +31,7 @@ func TestValidate(t *testing.T) {
 			name: "jazz allows empty room id",
 			cfg: func() Config {
 				cfg := base
-				cfg.Carrier = "jazz"
+				cfg.Carrier = "jazz" //nolint:goconst // test literal, repetition is intentional
 				cfg.RoomID = ""
 				return cfg
 			}(),
@@ -58,7 +59,7 @@ func TestValidate(t *testing.T) {
 			name: "unsupported carrier",
 			cfg: func() Config {
 				cfg := base
-				cfg.Carrier = "unknown"
+				cfg.Carrier = "unknown" //nolint:goconst // test literal, repetition is intentional
 				return cfg
 			}(),
 			want: ErrUnsupportedCarrier,
@@ -121,7 +122,7 @@ func TestValidate(t *testing.T) {
 			name: "videochannel requires dimensions and bitrate settings",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "videochannel"
+				cfg.Transport = "videochannel" //nolint:goconst // test literal, repetition is intentional
 				return cfg
 			}(),
 			want: ErrVideoWidthRequired,
@@ -135,7 +136,7 @@ func TestValidate(t *testing.T) {
 				cfg.VideoHeight = 480
 				cfg.VideoFPS = 30
 				cfg.VideoBitrate = "1M"
-				cfg.VideoHW = "none"
+				cfg.VideoHW = "none" //nolint:goconst // test literal, repetition is intentional
 				cfg.VideoCodec = "bogus"
 				return cfg
 			}(),
@@ -220,7 +221,7 @@ func TestValidate(t *testing.T) {
 			name: "vp8channel requires fps",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "vp8channel"
+				cfg.Transport = "vp8channel" //nolint:goconst // test literal, repetition is intentional
 				return cfg
 			}(),
 			want: ErrVP8FPSRequired,
@@ -249,7 +250,7 @@ func TestValidate(t *testing.T) {
 			name: "seichannel requires fps",
 			cfg: func() Config {
 				cfg := base
-				cfg.Transport = "seichannel"
+				cfg.Transport = "seichannel" //nolint:goconst // test literal, repetition is intentional
 				return cfg
 			}(),
 			want: ErrSEIFPSRequired,
@@ -346,7 +347,7 @@ func TestBuildRoomURL(t *testing.T) {
 		{carrier: "telemost", roomID: "abc", want: "https://telemost.yandex.ru/j/abc"},
 		{carrier: "jazz", roomID: "", want: "any"},
 		{carrier: "jazz", roomID: "room", want: "room"},
-		{carrier: "wbstream", roomID: "wb", want: "wb"},
+		{carrier: "wbstream", roomID: "wb", want: "wb"}, //nolint:goconst // test literal, repetition is intentional
 		{carrier: "other", roomID: "raw", want: "raw"},
 	}
 

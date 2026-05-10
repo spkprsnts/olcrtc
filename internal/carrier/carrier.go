@@ -49,7 +49,7 @@ type Config struct {
 // Factory creates a new carrier session.
 type Factory func(ctx context.Context, cfg Config) (Session, error)
 
-var registry = make(map[string]Factory)
+var registry = make(map[string]Factory) //nolint:gochecknoglobals // package-level state intentional
 
 // Register adds a carrier factory to the registry.
 func Register(name string, factory Factory) {

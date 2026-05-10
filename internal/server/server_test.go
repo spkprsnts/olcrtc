@@ -48,8 +48,8 @@ func TestSmuxConfig(t *testing.T) {
 func TestParseConnectRequest(t *testing.T) {
 	buf, err := json.Marshal(ConnectRequest{
 		Cmd:      "connect",
-		ClientID: "client-1",
-		Addr:     "example.com",
+		ClientID: "client-1", //nolint:goconst // test literal, repetition is intentional
+		Addr:     "example.com", //nolint:goconst // test literal, repetition is intentional
 		Port:     443,
 	})
 	if err != nil {
@@ -82,6 +82,7 @@ func TestAuthorizeRequest(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestSocks5ConnectSuccess(t *testing.T) {
 	s := &Server{}
 	server, client := net.Pipe()
@@ -191,7 +192,7 @@ func TestSetupResolver(t *testing.T) {
 	}
 }
 
-func TestOnDataWithNilConn(t *testing.T) {
+func TestOnDataWithNilConn(_ *testing.T) {
 	s := &Server{}
 	s.onData([]byte("ignored"))
 }
@@ -227,7 +228,8 @@ func TestShutdownClosesLinkAndConn(t *testing.T) {
 }
 
 func TestDialWithoutProxy(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
 	}
@@ -242,7 +244,10 @@ func TestDialWithoutProxy(t *testing.T) {
 		}
 	}()
 
-	tcpAddr := ln.Addr().(*net.TCPAddr)
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener addr type = %T, want *net.TCPAddr", ln.Addr())
+	}
 	s := &Server{resolver: net.DefaultResolver}
 	conn, err := s.dial(ConnectRequest{Addr: "127.0.0.1", Port: tcpAddr.Port})
 	if err != nil {
@@ -254,7 +259,7 @@ func TestDialWithoutProxy(t *testing.T) {
 
 func TestDialProxyError(t *testing.T) {
 	s := &Server{socksProxyAddr: "127.0.0.1", socksProxyPort: 1}
-	if _, err := s.dial(ConnectRequest{Addr: "example.com", Port: 443}); err == nil || !strings.Contains(err.Error(), "failed to dial proxy") {
+	if _, err := s.dial(ConnectRequest{Addr: "example.com", Port: 443}); err == nil || !strings.Contains(err.Error(), "failed to dial proxy") { //nolint:lll // long test description
 		t.Fatalf("dial() error = %v", err)
 	}
 }

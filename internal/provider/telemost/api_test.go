@@ -33,9 +33,9 @@ func TestGetConnectionInfo(t *testing.T) {
 			t.Fatalf("display_name query = %q", r.URL.Query().Get("display_name"))
 		}
 		_ = json.NewEncoder(w).Encode(ConnectionInfo{
-			RoomID:      "room",
-			PeerID:      "peer-id",
-			Credentials: "creds",
+			RoomID:      "room", //nolint:goconst // test literal, repetition is intentional
+			PeerID:      "peer-id", //nolint:goconst // test literal, repetition is intentional
+			Credentials: "creds", //nolint:goconst // test literal, repetition is intentional
 		})
 	}))
 
@@ -49,14 +49,14 @@ func TestGetConnectionInfo(t *testing.T) {
 }
 
 func TestGetConnectionInfoErrors(t *testing.T) {
-	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad", http.StatusForbidden)
 	}))
 	if _, err := GetConnectionInfo(context.Background(), "room", "peer"); !errors.Is(err, ErrAPI) {
 		t.Fatalf("GetConnectionInfo() error = %v, want %v", err, ErrAPI)
 	}
 
-	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("{"))
 	}))
 	if _, err := GetConnectionInfo(context.Background(), "room", "peer"); err == nil {
@@ -65,7 +65,7 @@ func TestGetConnectionInfoErrors(t *testing.T) {
 }
 
 func TestTelemostNewPeerUsesConnectionInfo(t *testing.T) {
-	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTelemostAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(ConnectionInfo{
 			RoomID:      "room",
 			PeerID:      "peer-id",

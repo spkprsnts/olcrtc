@@ -12,7 +12,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-var apiBase = "https://stream.wb.ru"
+var apiBase = "https://stream.wb.ru" //nolint:gochecknoglobals // package-level state intentional
 
 var (
 	errGuestRegister = errors.New("guest register failed")

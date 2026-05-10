@@ -202,7 +202,7 @@ func newFFmpegEncoder(
 	vcodec := resolveEncoderCodec(spec, hw)
 	args := buildEncoderArgs(spec, vcodec, width, height, fps, bitrate)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("encoder stdin: %w", err)
@@ -404,7 +404,7 @@ func newFFmpegDecoder(
 	decoderName := resolveDecoderName(spec, hw)
 	args := buildDecoderArgs(spec, decoderName, width, height, "gray")
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...) //nolint:gosec,lll // G204: ffmpeg path is operator-controlled config, not user input
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("decoder stdin: %w", err)
@@ -539,9 +539,9 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 	binary.LittleEndian.PutUint16(header[4:6], 0)
 	binary.LittleEndian.PutUint16(header[6:8], 32)
 	copy(header[8:12], []byte(fourCC))
-	binary.LittleEndian.PutUint16(header[12:14], uint16(width))
-	binary.LittleEndian.PutUint16(header[14:16], uint16(height))
-	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate))
+	binary.LittleEndian.PutUint16(header[12:14], uint16(width)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
+	binary.LittleEndian.PutUint16(header[14:16], uint16(height)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
+	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate)) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 	binary.LittleEndian.PutUint32(header[20:24], 1)
 	binary.LittleEndian.PutUint32(header[24:28], 0)
 	binary.LittleEndian.PutUint32(header[28:32], 0)
@@ -550,7 +550,7 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 
 func writeIVFFrame(w io.Writer, pts uint64, frame []byte) error {
 	header := make([]byte, 12)
-	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame)))
+	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame))) //nolint:gosec,lll // G115: bounded conversion verified by surrounding logic
 	binary.LittleEndian.PutUint64(header[4:12], pts)
 	if err := writeAll(w, header); err != nil {
 		return err

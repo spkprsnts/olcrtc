@@ -12,6 +12,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+var (
+	errVideoUnitBoom     = errors.New("boom")
+	errVideoUnitOpenBoom = errors.New("open boom")
+)
+
 type fakeVideoSession struct {
 	stream *fakeVideoStream
 	err    error
@@ -55,6 +60,7 @@ type nonVideoSession struct{}
 
 func (s *nonVideoSession) Capabilities() carrier.Capabilities { return carrier.Capabilities{} }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestNewCallbacksFeaturesAndClose(t *testing.T) {
 	stream := &fakeVideoStream{canSend: true}
 	name := "videochannel-unit-new"
@@ -75,7 +81,10 @@ func TestNewCallbacksFeaturesAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	tr := trIface.(*streamTransport)
+	tr, ok := trIface.(*streamTransport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *streamTransport", trIface)
+	}
 	if !stream.trackAdded || stream.trackCB == nil {
 		t.Fatal("New() did not attach track and handler")
 	}
@@ -89,7 +98,7 @@ func TestNewCallbacksFeaturesAndClose(t *testing.T) {
 	if !tr.CanSend() {
 		t.Fatal("CanSend() = false, want true")
 	}
-	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 {
+	if features := tr.Features(); !features.Reliable || !features.Ordered || !features.MessageOriented || features.MaxPayloadSize == 0 { //nolint:lll // long test description
 		t.Fatalf("Features() = %+v", features)
 	}
 	if tr.videoQRSize != defaultFragmentSize || tr.videoTileModule != 4 || tr.videoTileRS != 20 {
@@ -102,23 +111,23 @@ func TestNewCallbacksFeaturesAndClose(t *testing.T) {
 
 func TestNewErrorPaths(t *testing.T) {
 	carrier.Register("videochannel-create-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return nil, errors.New("boom")
+		return nil, errVideoUnitBoom
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-create-fails"}); err == nil || err.Error() != "create carrier transport: boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 
 	carrier.Register("videochannel-no-video", func(context.Context, carrier.Config) (carrier.Session, error) {
 		return &nonVideoSession{}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) {
+	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-no-video"}); !errors.Is(err, ErrVideoTrackUnsupported) { //nolint:lll // long test description
 		t.Fatalf("New() error = %v, want %v", err, ErrVideoTrackUnsupported)
 	}
 
 	carrier.Register("videochannel-open-fails", func(context.Context, carrier.Config) (carrier.Session, error) {
-		return &fakeVideoSession{err: errors.New("open boom")}, nil
+		return &fakeVideoSession{err: errVideoUnitOpenBoom}, nil
 	})
-	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-open-fails"}); err == nil || err.Error() != "open video track: open boom" {
+	if _, err := New(context.Background(), transport.Config{Carrier: "videochannel-open-fails"}); err == nil || err.Error() != "open video track: open boom" { //nolint:lll // long test description
 		t.Fatalf("New() error = %v", err)
 	}
 }
@@ -160,6 +169,7 @@ func TestSendAckAndClosePaths(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestOutboundPriorityRenderAndClosedEnqueue(t *testing.T) {
 	tr := &streamTransport{
 		stream:          &fakeVideoStream{canSend: true},

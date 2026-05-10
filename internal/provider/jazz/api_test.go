@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func withJazzAPIServer(t *testing.T, h http.Handler) string {
+func withJazzAPIServer(t *testing.T, h http.Handler) {
 	t.Helper()
 	old := apiBase
 	srv := httptest.NewServer(h)
@@ -19,25 +19,25 @@ func withJazzAPIServer(t *testing.T, h http.Handler) string {
 		srv.Close()
 	})
 	apiBase = srv.URL
-	return srv.URL
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestCreateMeetingAndPreconnect(t *testing.T) {
 	withJazzAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(headerAuthType) != authTypeAnonymous {
 			t.Fatalf("missing auth header: %v", r.Header)
 		}
 		switch r.URL.Path {
-		case "/room/create-meeting":
+		case "/room/create-meeting": //nolint:goconst // test literal, repetition is intentional
 			if r.Method != http.MethodPost {
 				t.Fatalf("create method = %s", r.Method)
 			}
-			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "room-1", Password: "pass"})
+			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "room-1", Password: "pass"}) //nolint:gosec,lll // G117: test-only struct mirroring upstream API shape
 		case "/room/room-1/preconnect":
 			if r.Method != http.MethodPost {
 				t.Fatalf("preconnect method = %s", r.Method)
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"connectorUrl": "wss://connector"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"connectorUrl": "wss://connector"}) //nolint:goconst,lll // test literal, repetition is intentional
 		default:
 			http.NotFound(w, r)
 		}
@@ -64,11 +64,12 @@ func TestCreateMeetingAndPreconnect(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestCreateRoomAndJoinRoom(t *testing.T) {
 	withJazzAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/room/create-meeting":
-			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "new-room", Password: "new-pass"})
+			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "new-room", Password: "new-pass"}) //nolint:goconst,gosec,lll // test literal; G117 is a false positive for test fixtures
 		case "/room/new-room/preconnect", "/room/existing/preconnect":
 			_ = json.NewEncoder(w).Encode(map[string]string{"connectorUrl": "wss://connector"})
 		default:
@@ -115,7 +116,7 @@ func TestNewPeerUsesRoomAPI(t *testing.T) {
 	withJazzAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/room/create-meeting":
-			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "new-room", Password: "new-pass"})
+			_ = json.NewEncoder(w).Encode(createResponse{RoomID: "new-room", Password: "new-pass"}) //nolint:gosec,lll // G117: test-only struct mirroring upstream API shape
 		case "/room/new-room/preconnect", "/room/existing/preconnect":
 			_ = json.NewEncoder(w).Encode(map[string]string{"connectorUrl": "wss://connector"})
 		default:

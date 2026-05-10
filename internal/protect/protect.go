@@ -12,7 +12,7 @@ import (
 
 // Protector is called with a socket file descriptor before connect.
 // On Android, this calls VpnService.protect(fd) to bypass VPN routing.
-var Protector func(fd int) bool
+var Protector func(fd int) bool //nolint:gochecknoglobals // package-level state intentional
 
 func controlFunc(network, _ string, c syscall.RawConn) error {
 	if Protector == nil {

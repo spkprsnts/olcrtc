@@ -7,7 +7,7 @@ import (
 )
 
 // verboseEnabled controls whether verbose and debug logging is enabled.
-var verboseEnabled atomic.Bool
+var verboseEnabled atomic.Bool //nolint:gochecknoglobals // package-level state intentional
 
 // SetVerbose enables or disables verbose/debug logging.
 func SetVerbose(enabled bool) {

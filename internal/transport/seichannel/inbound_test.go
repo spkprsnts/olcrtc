@@ -21,7 +21,7 @@ func TestInboundAssemblyAndAck(t *testing.T) {
 		typ:       frameTypeData,
 		seq:       1,
 		crc:       crc,
-		totalLen:  uint32(len(payload)),
+		totalLen:  uint32(len(payload)), //nolint:gosec // G115: bounded conversion verified by surrounding logic
 		fragIdx:   1,
 		fragTotal: 2,
 		payload:   []byte(" world"),
@@ -34,7 +34,7 @@ func TestInboundAssemblyAndAck(t *testing.T) {
 		typ:       frameTypeData,
 		seq:       1,
 		crc:       crc,
-		totalLen:  uint32(len(payload)),
+		totalLen:  uint32(len(payload)), //nolint:gosec // G115: bounded conversion verified by surrounding logic
 		fragIdx:   0,
 		fragTotal: 2,
 		payload:   []byte("hello"),
@@ -57,7 +57,7 @@ func TestInboundAssemblyAndAck(t *testing.T) {
 		typ:       frameTypeData,
 		seq:       1,
 		crc:       crc,
-		totalLen:  uint32(len(payload)),
+		totalLen:  uint32(len(payload)), //nolint:gosec // G115: bounded conversion verified by surrounding logic
 		fragIdx:   0,
 		fragTotal: 2,
 		payload:   []byte("hello"),

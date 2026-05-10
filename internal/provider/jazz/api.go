@@ -20,7 +20,7 @@ const (
 	contentTypeJSON   = "application/json"
 )
 
-var apiBase = "https://bk.salutejazz.ru"
+var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // package-level state intentional
 
 // RoomInfo contains connection details for a SaluteJazz room.
 type RoomInfo struct {

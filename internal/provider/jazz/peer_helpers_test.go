@@ -9,6 +9,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestPeerStateHelpers(t *testing.T) {
 	p := &Peer{
 		reconnectCh:    make(chan struct{}, 1),

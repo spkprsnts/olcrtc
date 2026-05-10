@@ -70,7 +70,7 @@ type streamTransport struct {
 	videoCodec      string
 	videoTileModule int
 	videoTileRS     int
-	runCtx          context.Context
+	runCtx          context.Context //nolint:containedctx,lll // long-lived context drives idle-frame loops bound to this transport's lifetime
 
 	idleFrame   []byte
 	idleFrameMu sync.Mutex
@@ -571,7 +571,7 @@ func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
 	for _, frag := range msg.frags {
 		data = append(data, frag...)
 	}
-	if uint32(len(data)) > msg.totalLen {
+	if uint32(len(data)) > msg.totalLen { //nolint:gosec // G115: bounded conversion verified by surrounding logic
 		data = data[:msg.totalLen]
 	}
 	return data

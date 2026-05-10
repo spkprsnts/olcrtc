@@ -34,7 +34,7 @@ func TestTrafficShapeAndDelay(t *testing.T) {
 	}
 
 	p.SetTrafficShape(TrafficShape{MaxMessageSize: 10, MinDelay: time.Millisecond, MaxDelay: 4 * time.Millisecond})
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		got := p.calculateDelay()
 		if got < time.Millisecond || got >= 4*time.Millisecond {
 			t.Fatalf("calculateDelay() = %v, out of range", got)
@@ -50,7 +50,7 @@ func TestICEParsingFiltersTURN(t *testing.T) {
 		t.Fatal("isNonTURNURL rejected STUN URL")
 	}
 
-	urls := parseICEURLs(map[string]interface{}{"urls": []interface{}{"turn:x", "stun:a", 123, "turns:y"}})
+	urls := parseICEURLs(map[string]interface{}{"urls": []interface{}{"turn:x", "stun:a", 123, "turns:y"}}) //nolint:goconst,lll // test literal, repetition is intentional
 	if len(urls) != 1 || urls[0] != "stun:a" {
 		t.Fatalf("parseICEURLs(interface) = %v, want [stun:a]", urls)
 	}
@@ -85,7 +85,7 @@ func TestParseICEServer(t *testing.T) {
 func TestConferenceEndParsing(t *testing.T) {
 	for _, msg := range []map[string]interface{}{
 		{"conferenceClosed": true},
-		{"conference": map[string]interface{}{"state": "ENDED"}},
+		{"conference": map[string]interface{}{"state": "ENDED"}}, //nolint:goconst // test literal, repetition is intentional
 		{"conferenceState": map[string]interface{}{"state": "terminated"}},
 	} {
 		if !isConferenceEndMessage(msg) {
@@ -106,6 +106,7 @@ func TestConferenceEndParsing(t *testing.T) {
 	}
 }
 
+//nolint:cyclop // table-driven test naturally has many branches
 func TestPeerSmallStateHelpers(t *testing.T) {
 	p := &Peer{
 		reconnectCh: make(chan struct{}, 1),
@@ -169,7 +170,7 @@ func TestTelemetryCfgParsing(t *testing.T) {
 		t.Fatal("parseTelemetryCfg() accepted missing config")
 	}
 	if _, _, ok := parseTelemetryCfg(map[string]interface{}{
-		"telemetryConfiguration": map[string]interface{}{},
+		"telemetryConfiguration": map[string]interface{}{}, //nolint:goconst // test literal, repetition is intentional
 	}); ok {
 		t.Fatal("parseTelemetryCfg() accepted missing endpoint")
 	}
