@@ -64,7 +64,6 @@ const (
 	httpPingSampleDelay   = 80 * time.Millisecond
 )
 
-//nolint:gochecknoglobals // Mobile bindings expose a singleton runtime controlled by the embedding app.
 var (
 	mu                 sync.Mutex
 	defaults           mobileConfig
@@ -617,8 +616,6 @@ func startWithConfig(
 }
 
 // WaitReady blocks until the selected transport is connected and the local SOCKS5 listener is ready.
-//
-//nolint:cyclop // The control flow is intentionally linear so mobile callers can observe each startup state clearly.
 func WaitReady(timeoutMillis int) error {
 	mu.Lock()
 	r := ready

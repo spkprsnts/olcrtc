@@ -122,8 +122,8 @@ func testEpochHdr(epoch uint32) [epochHdrLen]byte {
 func TestHandleIncomingFrameIgnoresLoopedBackLocalEpoch(t *testing.T) {
 	tr := &streamTransport{
 		bindingToken: bindingToken("test"),
-		localEpoch: 12345,
-		onData:     func([]byte) {},
+		localEpoch:   12345,
+		onData:       func([]byte) {},
 	}
 
 	var called atomic.Int32

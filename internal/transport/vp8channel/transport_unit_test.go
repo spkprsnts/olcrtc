@@ -1,4 +1,3 @@
-//nolint:all // Test file keeps scenario setup inline.
 package vp8channel
 
 import (

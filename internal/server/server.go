@@ -481,7 +481,7 @@ func (s *Server) socks5Connect(conn net.Conn, targetAddr string, targetPort int)
 	req := make([]byte, 0, 7+addrLen)
 	req = append(req, 5, 1, 0, 3, byte(addrLen))
 	req = append(req, []byte(targetAddr)...)
-	req = append(req, byte(targetPort>>8), byte(targetPort)) //nolint:gosec
+	req = append(req, byte(targetPort>>8), byte(targetPort))
 
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("failed to write socks5 connect req: %w", err)

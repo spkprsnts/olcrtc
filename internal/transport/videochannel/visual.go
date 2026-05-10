@@ -129,7 +129,7 @@ func extractTilePayload(frame []byte, tileModule, tileRS int) ([]byte, error) {
 
 	result, err := c.Decode(frame)
 	if err != nil {
-		return nil, nil //nolint:nilerr
+		return nil, nil
 	}
 
 	return result.Payload, nil

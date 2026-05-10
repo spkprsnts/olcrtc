@@ -9,14 +9,14 @@ import (
 
 type stubLink struct{}
 
-func (s *stubLink) Connect(context.Context) error           { return nil }
-func (s *stubLink) Send([]byte) error                       { return nil }
-func (s *stubLink) Close() error                            { return nil }
-func (s *stubLink) SetReconnectCallback(func())             {}
-func (s *stubLink) SetShouldReconnect(func() bool)          {}
-func (s *stubLink) SetEndedCallback(func(string))           {}
-func (s *stubLink) WatchConnection(context.Context)         {}
-func (s *stubLink) CanSend() bool                           { return true }
+func (s *stubLink) Connect(context.Context) error   { return nil }
+func (s *stubLink) Send([]byte) error               { return nil }
+func (s *stubLink) Close() error                    { return nil }
+func (s *stubLink) SetReconnectCallback(func())     {}
+func (s *stubLink) SetShouldReconnect(func() bool)  {}
+func (s *stubLink) SetEndedCallback(func(string))   {}
+func (s *stubLink) WatchConnection(context.Context) {}
+func (s *stubLink) CanSend() bool                   { return true }
 
 func snapshotLinkRegistry() map[string]Factory {
 	out := make(map[string]Factory, len(registry))

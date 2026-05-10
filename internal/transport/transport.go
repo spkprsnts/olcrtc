@@ -63,7 +63,6 @@ type Config struct {
 // Factory creates a transport instance.
 type Factory func(ctx context.Context, cfg Config) (Transport, error)
 
-//nolint:gochecknoglobals
 var registry = make(map[string]Factory)
 
 // Register adds a transport factory to the registry.

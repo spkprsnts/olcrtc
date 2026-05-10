@@ -16,7 +16,6 @@ var (
 	ErrSEIValueTruncated = errors.New("sei value truncated")
 )
 
-//nolint:gochecknoglobals
 var (
 	videoSEIUUID = [16]byte{
 		0x5d, 0xc0, 0x3b, 0xa8,
@@ -135,7 +134,7 @@ func appendSEIValue(dst []byte, value int) []byte {
 		dst = append(dst, 0xff)
 		value -= 0xff
 	}
-	return append(dst, byte(value)) //nolint:gosec
+	return append(dst, byte(value))
 }
 
 func consumeSEIValue(data []byte, pos int) (int, int, error) {

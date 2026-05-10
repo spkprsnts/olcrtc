@@ -1469,7 +1469,6 @@ func (p *Peer) calculateDelay() time.Duration {
 	if maxDelay <= minDelay {
 		return minDelay
 	}
-	//nolint:gosec
 	return minDelay + time.Duration(rand.Int64N(int64(maxDelay-minDelay)))
 }
 

@@ -471,7 +471,7 @@ func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
 	for _, frag := range msg.frags {
 		data = append(data, frag...)
 	}
-	if uint32(len(data)) > msg.totalLen { //nolint:gosec
+	if uint32(len(data)) > msg.totalLen {
 		data = data[:msg.totalLen]
 	}
 	return data
@@ -557,9 +557,9 @@ func encodeDataFrame(seq, crc uint32, totalLen, fragIdx, fragTotal int, payload 
 	out[5] = frameTypeData
 	binary.BigEndian.PutUint32(out[6:10], seq)
 	binary.BigEndian.PutUint32(out[10:14], crc)
-	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))  //nolint:gosec
-	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))   //nolint:gosec
-	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal)) //nolint:gosec
+	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))
+	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))
+	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal))
 	copy(out[22:], payload)
 	return out
 }
