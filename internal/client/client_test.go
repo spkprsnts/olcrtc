@@ -73,6 +73,113 @@ func TestSocks5Handshake(t *testing.T) {
 	}
 }
 
+func TestSocks5HandshakeWithAuth(t *testing.T) {
+	c := &Client{socksUser: "user", socksPass: "pass"}
+	server, client := net.Pipe()
+	defer func() {
+		_ = server.Close()
+		_ = client.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.socks5Handshake(server)
+	}()
+
+	// Client greeting: VER=5, NMETHODS=1, METHOD=0x00 (no-auth)
+	if _, err := client.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatalf("Write greeting: %v", err)
+	}
+	// Server must reply with method 0x02 (username/password)
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull method: %v", err)
+	}
+	if !bytes.Equal(resp, []byte{5, 2}) {
+		t.Fatalf("method selection = %v, want [5 2]", resp)
+	}
+	// Read the auth sub-negotiation: VER(1) + ULEN(1) + USER + PLEN(1) + PASS
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(client, header); err != nil {
+		t.Fatalf("read auth header: %v", err)
+	}
+	if header[0] != 0x01 {
+		t.Fatalf("auth sub-version = %d, want 1", header[0])
+	}
+	ulen := int(header[1])
+	userBuf := make([]byte, ulen)
+	if _, err := io.ReadFull(client, userBuf); err != nil {
+		t.Fatalf("read username: %v", err)
+	}
+	plenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(client, plenBuf); err != nil {
+		t.Fatalf("read plen: %v", err)
+	}
+	passBuf := make([]byte, int(plenBuf[0]))
+	if _, err := io.ReadFull(client, passBuf); err != nil {
+		t.Fatalf("read password: %v", err)
+	}
+	if string(userBuf) != "user" || string(passBuf) != "pass" {
+		t.Fatalf("credentials = (%q, %q), want (user, pass)", userBuf, passBuf)
+	}
+	// Reply success
+	if _, err := client.Write([]byte{0x01, 0x00}); err != nil {
+		t.Fatalf("write auth reply: %v", err)
+	}
+
+	if err := <-done; err != nil {
+		t.Fatalf("socks5Handshake() error = %v", err)
+	}
+}
+
+func TestSocks5HandshakeAuthRejected(t *testing.T) {
+	c := &Client{socksUser: "user", socksPass: "wrong"}
+	server, client := net.Pipe()
+	defer func() {
+		_ = server.Close()
+		_ = client.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.socks5Handshake(server)
+	}()
+
+	if _, err := client.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	// Consume method selection reply [5, 2]
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull method: %v", err)
+	}
+	// Consume auth sub-negotiation
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(client, header); err != nil {
+		t.Fatalf("read auth header: %v", err)
+	}
+	rest := make([]byte, int(header[1]))
+	if _, err := io.ReadFull(client, rest); err != nil {
+		t.Fatalf("read username: %v", err)
+	}
+	plenBuf := make([]byte, 1)
+	if _, err := io.ReadFull(client, plenBuf); err != nil {
+		t.Fatalf("read plen: %v", err)
+	}
+	passBuf := make([]byte, int(plenBuf[0]))
+	if _, err := io.ReadFull(client, passBuf); err != nil {
+		t.Fatalf("read password: %v", err)
+	}
+	// Reply failure
+	if _, err := client.Write([]byte{0x01, 0x01}); err != nil {
+		t.Fatalf("write auth reject: %v", err)
+	}
+
+	if err := <-done; !errors.Is(err, ErrSOCKSAuthFailed) {
+		t.Fatalf("socks5Handshake() error = %v, want ErrSOCKSAuthFailed", err)
+	}
+}
+
 func TestSocks5HandshakeRejectsVersion(t *testing.T) {
 	c := &Client{}
 	server, client := net.Pipe()
