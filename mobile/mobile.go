@@ -34,15 +34,16 @@ type LogWriter interface {
 }
 
 var (
-	errAlreadyRunning     = errors.New("olcRTC already running")
-	errCarrierRequired    = errors.New("carrier is required")
-	errRoomIDRequired     = errors.New("roomID is required")
-	errClientIDRequired   = errors.New("clientID is required")
-	errKeyHexRequired     = errors.New("keyHex is required")
-	errNotRunning         = errors.New("olcRTC is not running")
-	errStoppedBeforeReady = errors.New("olcRTC stopped before becoming ready")
-	errStartTimedOut      = errors.New("olcRTC start timed out")
-	errHTTPPingTimedOut   = errors.New("HTTP ping timed out")
+	errAlreadyRunning       = errors.New("olcRTC already running")
+	errCarrierRequired      = errors.New("carrier is required")
+	errRoomIDRequired       = errors.New("roomID is required")
+	errClientIDRequired     = errors.New("clientID is required")
+	errKeyHexRequired       = errors.New("keyHex is required")
+	errNotRunning           = errors.New("olcRTC is not running")
+	errStoppedBeforeReady   = errors.New("olcRTC stopped before becoming ready")
+	errStartTimedOut        = errors.New("olcRTC start timed out")
+	errHTTPPingTimedOut     = errors.New("HTTP ping timed out")
+	errUnexpectedHTTPStatus = errors.New("unexpected HTTP status")
 )
 
 const (
@@ -384,14 +385,39 @@ func httpPingThroughSocks(
 	socksAddr string,
 	targetURL string,
 ) (int64, error) {
+	normalizedURL, err := normalizeHTTPPingURL(targetURL)
+	if err != nil {
+		return 0, err
+	}
+
+	client, closeClient := newHTTPPingClient(socksAddr)
+	defer closeClient()
+
+	// Warm up the SOCKS/TCP/TLS path. This request is intentionally not included
+	// in the returned latency.
+	_, _ = singleHTTPPingRequest(
+		parentCtx,
+		client,
+		normalizedURL,
+		httpPingWarmupTimeout,
+	)
+
+	return bestHTTPPingSample(parentCtx, client, normalizedURL)
+}
+
+func normalizeHTTPPingURL(targetURL string) (string, error) {
 	if targetURL == "" {
 		targetURL = defaultHTTPPingURL
 	}
 
 	if _, err := url.ParseRequestURI(targetURL); err != nil {
-		return 0, err
+		return "", fmt.Errorf("parse HTTP ping URL: %w", err)
 	}
 
+	return targetURL, nil
+}
+
+func newHTTPPingClient(socksAddr string) (*http.Client, func()) {
 	proxyURL := &url.URL{
 		Scheme: "socks5",
 		Host:   socksAddr,
@@ -410,29 +436,27 @@ func httpPingThroughSocks(
 		ResponseHeaderTimeout: httpPingSampleTimeout,
 		ExpectContinueTimeout: 500 * time.Millisecond,
 	}
-	defer transport.CloseIdleConnections()
 
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   httpPingSampleTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
 
-	// Warm up the SOCKS/TCP/TLS path. This request is intentionally not included
-	// in the returned latency.
-	_, _ = singleHTTPPingRequest(
-		parentCtx,
-		client,
-		targetURL,
-		httpPingWarmupTimeout,
-	)
+	return client, transport.CloseIdleConnections
+}
 
+func bestHTTPPingSample(
+	parentCtx context.Context,
+	client *http.Client,
+	targetURL string,
+) (int64, error) {
 	var best int64
 	var lastErr error
 
-	for i := 0; i < httpPingSamples; i++ {
+	for i := range httpPingSamples {
 		elapsed, err := singleHTTPPingRequest(
 			parentCtx,
 			client,
@@ -441,8 +465,8 @@ func httpPingThroughSocks(
 		)
 		if err != nil {
 			lastErr = err
-		} else if elapsed > 0 && (best == 0 || elapsed < best) {
-			best = elapsed
+		} else {
+			best = bestPositiveLatency(best, elapsed)
 		}
 
 		if i < httpPingSamples-1 {
@@ -461,6 +485,18 @@ func httpPingThroughSocks(
 	return 0, errHTTPPingTimedOut
 }
 
+func bestPositiveLatency(currentBest, next int64) int64 {
+	if next <= 0 {
+		return currentBest
+	}
+
+	if currentBest == 0 || next < currentBest {
+		return next
+	}
+
+	return currentBest
+}
+
 func singleHTTPPingRequest(
 	parentCtx context.Context,
 	client *http.Client,
@@ -472,7 +508,7 @@ func singleHTTPPingRequest(
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("create HTTP ping request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", "Olcbox-Android")
@@ -483,16 +519,18 @@ func singleHTTPPingRequest(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("perform HTTP ping request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	elapsed := time.Since(startedAt).Milliseconds()
 
 	_, _ = io.Copy(io.Discard, resp.Body)
 
-	if resp.StatusCode < 200 || resp.StatusCode > 399 {
-		return 0, fmt.Errorf("unexpected HTTP status: %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode > http.StatusPermanentRedirect {
+		return 0, fmt.Errorf("%w: %d", errUnexpectedHTTPStatus, resp.StatusCode)
 	}
 
 	return elapsed, nil
