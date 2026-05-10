@@ -62,7 +62,6 @@ var (
 	ErrTransportClosed = errors.New("vp8channel transport closed")
 )
 
-//nolint:gochecknoglobals
 var vp8Keepalive = []byte{
 	0x30, 0x01, 0x00, 0x9d, 0x01, 0x2a, 0x10, 0x00,
 	0x10, 0x00, 0x00, 0x47, 0x08, 0x85, 0x85, 0x88,
@@ -213,7 +212,6 @@ func randomEpoch() uint32 {
 	if _, err := rand.Read(b[:]); err != nil {
 		// rand.Read on Linux essentially never fails; fall back to a
 		// time-derived value rather than panic.
-		//nolint:gosec // intentional uint32 truncation of a nanosecond timestamp
 		return uint32(time.Now().UnixNano())
 	}
 	e := binary.BigEndian.Uint32(b[:])

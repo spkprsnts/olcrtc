@@ -13,21 +13,20 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/protect"
 )
 
-//nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
 var apiBase = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
 
-var ErrAPI = errors.New("api error") //nolint:revive
+var ErrAPI = errors.New("api error")
 
-type ConnectionInfo struct { //nolint:revive
-	RoomID       string `json:"room_id"`     //nolint:tagliatelle
-	PeerID       string `json:"peer_id"`     //nolint:tagliatelle
-	Credentials  string `json:"credentials"` //nolint:tagliatelle
+type ConnectionInfo struct {
+	RoomID       string `json:"room_id"`
+	PeerID       string `json:"peer_id"`
+	Credentials  string `json:"credentials"`
 	ClientConfig struct {
-		MediaServerURL string `json:"media_server_url"` //nolint:tagliatelle
-	} `json:"client_configuration"` //nolint:tagliatelle
+		MediaServerURL string `json:"media_server_url"`
+	} `json:"client_configuration"`
 }
 
-func GetConnectionInfo(ctx context.Context, roomURL, displayName string) (*ConnectionInfo, error) { //nolint:revive
+func GetConnectionInfo(ctx context.Context, roomURL, displayName string) (*ConnectionInfo, error) {
 	u := fmt.Sprintf("%s/conferences/%s/connection", apiBase, url.QueryEscape(roomURL))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

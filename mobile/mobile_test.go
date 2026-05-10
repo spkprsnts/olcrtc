@@ -1,4 +1,3 @@
-//nolint:all // Test file keeps scenario setup inline.
 package mobile
 
 import (

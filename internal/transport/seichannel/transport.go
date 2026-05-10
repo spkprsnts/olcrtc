@@ -169,7 +169,8 @@ func New(ctx context.Context, cfg transport.Config) (transport.Transport, error)
 		batchSize:     batchSize,
 	}
 
-	if err := stream.AddTrack(track); err != nil {
+	err = stream.AddTrack(track)
+	if err != nil {
 		return nil, fmt.Errorf("attach local video track: %w", err)
 	}
 	stream.SetTrackHandler(tr.handleRemoteTrack)
@@ -351,9 +352,11 @@ func (p *streamTransport) writeBatch(idle []byte) bool {
 			if i > 0 {
 				return true
 			}
+			//nolint:errcheck,gosec // best-effort idle keepalive frame
 			_ = p.track.WriteSample(media.Sample{Data: idle, Duration: frameInterval})
 			return true
 		}
+		//nolint:errcheck,gosec // best-effort sample write
 		_ = p.track.WriteSample(media.Sample{Data: buildVideoAccessUnit(payload), Duration: frameInterval})
 	}
 	return true
@@ -471,7 +474,7 @@ func (p *streamTransport) assembleMessage(msg *inboundMessage) []byte {
 	for _, frag := range msg.frags {
 		data = append(data, frag...)
 	}
-	if uint32(len(data)) > msg.totalLen { //nolint:gosec
+	if uint32(len(data)) > msg.totalLen {
 		data = data[:msg.totalLen]
 	}
 	return data
@@ -512,6 +515,7 @@ func (p *streamTransport) handleInboundFrame(frame transportFrame) {
 }
 
 func (p *streamTransport) sendAck(seq, crc uint32) {
+	//nolint:dogsled,errcheck // ack delivery is best-effort
 	_ = p.enqueueFrame(encodeAckFrame(seq, crc), true)
 }
 
@@ -537,10 +541,7 @@ func fragmentPayload(data []byte, maxSize int) [][]byte {
 
 	out := make([][]byte, 0, (len(data)+maxSize-1)/maxSize)
 	for start := 0; start < len(data); start += maxSize {
-		end := start + maxSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(start+maxSize, len(data))
 
 		chunk := make([]byte, end-start)
 		copy(chunk, data[start:end])
@@ -557,9 +558,9 @@ func encodeDataFrame(seq, crc uint32, totalLen, fragIdx, fragTotal int, payload 
 	out[5] = frameTypeData
 	binary.BigEndian.PutUint32(out[6:10], seq)
 	binary.BigEndian.PutUint32(out[10:14], crc)
-	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))  //nolint:gosec
-	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))   //nolint:gosec
-	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal)) //nolint:gosec
+	binary.BigEndian.PutUint32(out[14:18], uint32(totalLen))
+	binary.BigEndian.PutUint16(out[18:20], uint16(fragIdx))
+	binary.BigEndian.PutUint16(out[20:22], uint16(fragTotal))
 	copy(out[22:], payload)
 	return out
 }

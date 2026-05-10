@@ -12,7 +12,7 @@ import (
 
 // Protector is called with a socket file descriptor before connect.
 // On Android, this calls VpnService.protect(fd) to bypass VPN routing.
-var Protector func(fd int) bool //nolint:gochecknoglobals
+var Protector func(fd int) bool
 
 func controlFunc(network, _ string, c syscall.RawConn) error {
 	if Protector == nil {
@@ -47,7 +47,7 @@ func NewHTTPClient() *http.Client {
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          10,
 		IdleConnTimeout:       30 * time.Second,
-		TLSHandshakeTimeout:  10 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 	}
 	return &http.Client{Transport: transport}
@@ -78,4 +78,3 @@ func (d *ProxyDialer) Dial(network, addr string) (net.Conn, error) {
 func NewProxyDialer() *ProxyDialer {
 	return &ProxyDialer{}
 }
-

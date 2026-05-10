@@ -20,7 +20,7 @@ const (
 	contentTypeJSON   = "application/json"
 )
 
-var apiBase = "https://bk.salutejazz.ru" //nolint:gochecknoglobals // Tests redirect HTTP API calls to httptest.
+var apiBase = "https://bk.salutejazz.ru"
 
 // RoomInfo contains connection details for a SaluteJazz room.
 type RoomInfo struct {

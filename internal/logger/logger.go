@@ -7,8 +7,6 @@ import (
 )
 
 // verboseEnabled controls whether verbose and debug logging is enabled.
-//
-//nolint:gochecknoglobals // Global log state is acceptable for CLI tools.
 var verboseEnabled atomic.Bool
 
 // SetVerbose enables or disables verbose/debug logging.
