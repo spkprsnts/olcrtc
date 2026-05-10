@@ -62,17 +62,17 @@ echo "Select carrier:"
 echo "  1) telemost"
 echo "  2) jazz"
 echo "  3) wbstream"
-read -p "Enter choice [1-3, default: 1]: " CARRIER_CHOICE
+read -p "Enter choice [1-3, default: 3]: " CARRIER_CHOICE
 
 case "$CARRIER_CHOICE" in
+    1)
+        CARRIER="telemost"
+        ;;
     2)
         CARRIER="jazz"
         ;;
-    3)
-        CARRIER="wbstream"
-        ;;
     *)
-        CARRIER="telemost"
+        CARRIER="wbstream"
         ;;
 esac
 
@@ -139,8 +139,8 @@ read -p "Enter Client ID [default: default]: " CLIENT_ID_INPUT
 CLIENT_ID=${CLIENT_ID_INPUT:-default}
 
 echo ""
-read -p "DNS server [default: 1.1.1.1:53]: " DNS_INPUT
-DNS=${DNS_INPUT:-1.1.1.1:53}
+read -p "DNS server [default: 8.8.8.8:53]: " DNS_INPUT
+DNS=${DNS_INPUT:-8.8.8.8:53}
 
 echo ""
 read -p "Use SOCKS5 proxy for egress? (y/N): " USE_PROXY
@@ -326,9 +326,9 @@ podman run -d \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
         "${EXTRA_ARGS[@]}" "${TRANSPORT_ARGS[@]}"
 
-read -p "Enter a comment for the config (default: OLC chat - t.me/openlibrecommunitychat): " sub_configname
+read -p "Enter a comment for the config (default: olc - t.me/openlibrecommunity): " sub_configname
 if [ -z "$sub_configname" ]; then
-    sub_configname="OLC chat - t.me/openlibrecommunitychat"
+    sub_configname="olc - t.me/openlibrecommunity"
 fi
 
 echo ""
@@ -394,7 +394,7 @@ echo ""
 echo "Client command:"
 echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
 echo ""
-echo -n "    -link direct -transport \"$TRANSPORT\" -dns 1.1.1.1:53 -data data \\"
+echo -n "    -link direct -transport \"$TRANSPORT\" -dns $DNS -data data \\"
 echo ""
 
 if [ "$TRANSPORT" = "videochannel" ]; then
