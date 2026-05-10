@@ -52,6 +52,10 @@ git clone https://github.com/openlibrecommunity/olcrtc --recurse-submodules
 cd olcrtc
 ```
 
+<img src="asset/gitclone.png" alt="speedtest" width="800">
+
+
+
 ---
 
 ## Шаг 2: Запустить сервер
@@ -217,6 +221,8 @@ SEI ACK timeout in milliseconds [default: 3000]: 2000
 ```
 
 Нажми Enter для всех - значения по умолчанию оптимальны.
+
+
 
 ### Результат
 

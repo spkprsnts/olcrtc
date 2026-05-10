@@ -741,6 +741,12 @@ olcrtc://wbstream?datachannel@room-01#key%client-id$RU / free
 
 **Скорость по убыванию:** `datachannel` > `vp8channel` > `seichannel` > `videochannel`
 
+
+
+**Рекордный замер:** на связке `wbstream + datachannel` (test by `x2827262628281872727`) зафиксированы пинг **7 мс** и скорость **792.62 Mbps на вход / 749.69 Mbps на выход** - максимум, измеренный через olcRTC.
+
+<img src="asset/speedtest.png" alt="speedtest" width="400">
+
 ---
 
 ## 17. CI/CD
