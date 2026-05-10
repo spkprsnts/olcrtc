@@ -441,9 +441,8 @@ func (c *Client) socks5UserPassAuth(conn net.Conn) error {
 		return fmt.Errorf("read socks5 auth header: %w", err)
 	}
 	if header[0] != 0x01 {
-		return fmt.Errorf("invalid socks5 auth version: %d", header[0])
+		return fmt.Errorf("%w: expected auth version 1, got %d", ErrInvalidSOCKSVersion, header[0])
 	}
-
 	ulen := int(header[1])
 	userBuf := make([]byte, ulen)
 	if _, err := io.ReadFull(conn, userBuf); err != nil {
