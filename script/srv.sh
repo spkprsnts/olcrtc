@@ -374,7 +374,7 @@ if curl -fsSL "$GR_URL" -o "$GR_BIN" 2>/dev/null; then
     chmod +x "$GR_BIN"
     echo "[*] QR code for your URI (scan with olcbox):"
     echo ""
-    "$GR_BIN" "$OLC_URI" 2>/dev/null || echo "[!] QR generation failed"
+    "$GR_BIN" -s "$OLC_URI" 2>/dev/null || echo "[!] QR generation failed"
     echo ""
 else
     echo "[!] Could not download gr ($GR_URL), skipping QR"
