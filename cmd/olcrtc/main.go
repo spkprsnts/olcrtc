@@ -18,6 +18,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
+	"github.com/openlibrecommunity/olcrtc/internal/transport/videochannel"
 )
 
 const modeGen = "gen"
@@ -25,8 +26,10 @@ const modeGen = "gen"
 // ErrDataDirRequired is returned when no data directory is specified.
 var ErrDataDirRequired = errors.New("data directory required (use -data data)")
 
+//nolint:gochecknoglobals // Tests replace the long-running session runner with a bounded function.
 var runSession = session.Run
 
+//nolint:gochecknoglobals // Tests replace gen runner with a stub.
 var runGen = execGen
 
 type config struct {
@@ -63,6 +66,7 @@ type config struct {
 	seiFragmentSize int
 	seiAckTimeoutMS int
 	amount          int
+	ffmpegPath      string
 }
 
 func main() {
@@ -88,6 +92,10 @@ func runWithArgs(args []string) error {
 
 func runWithConfig(cfg config) error {
 	configureLogging(cfg.debug)
+
+	if cfg.ffmpegPath != "ffmpeg" && cfg.ffmpegPath != "" {
+		videochannel.FFmpegPath = cfg.ffmpegPath
+	}
 
 	if cfg.mode == modeGen {
 		return runGen(cfg)
@@ -200,6 +208,7 @@ func parseFlagsFrom(args []string, errorHandling flag.ErrorHandling) (config, er
 	fs.IntVar(&cfg.seiFragmentSize, "frag", 0, "Fragment size in bytes for fragmented transports (seichannel)")
 	fs.IntVar(&cfg.seiAckTimeoutMS, "ack-ms", 0, "ACK timeout in milliseconds for reliable visual transports (seichannel)")
 	fs.IntVar(&cfg.amount, "amount", 0, "Number of rooms to generate (gen mode only)")
+	fs.StringVar(&cfg.ffmpegPath, "ffmpeg", "ffmpeg", "Path to ffmpeg executable")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, fmt.Errorf("parse flags: %w", err)

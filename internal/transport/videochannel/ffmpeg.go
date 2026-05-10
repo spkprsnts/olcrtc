@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -41,6 +42,9 @@ var (
 	// ErrUnexpectedFrameSize is returned when the raw frame size does not match expectations.
 	ErrUnexpectedFrameSize = errors.New("unexpected encoder frame size")
 )
+
+// FFmpegPath defines the path to the ffmpeg executable.
+var FFmpegPath = "ffmpeg"
 
 type codecSpec struct {
 	mimeType     string
@@ -195,14 +199,25 @@ func newFFmpegEncoder(
 	width, height, fps int,
 	bitrate, hw string,
 ) (*ffmpegEncoder, error) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, ErrFFmpegUnavailable
+	ffmpegBin := FFmpegPath
+	if envBin := os.Getenv("FFMPEG_BIN"); envBin != "" {
+		ffmpegBin = envBin
+	}
+
+	if ffmpegBin == "ffmpeg" {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return nil, ErrFFmpegUnavailable
+		}
+	} else {
+		if _, err := os.Stat(ffmpegBin); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrFFmpegUnavailable, err)
+		}
 	}
 
 	vcodec := resolveEncoderCodec(spec, hw)
 	args := buildEncoderArgs(spec, vcodec, width, height, fps, bitrate)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("encoder stdin: %w", err)
@@ -397,14 +412,25 @@ func newFFmpegDecoder(
 	width, height, fps int,
 	hw string,
 ) (*ffmpegDecoder, error) {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil, ErrFFmpegUnavailable
+	ffmpegBin := FFmpegPath
+	if envBin := os.Getenv("FFMPEG_BIN"); envBin != "" {
+		ffmpegBin = envBin
+	}
+
+	if ffmpegBin == "ffmpeg" {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return nil, ErrFFmpegUnavailable
+		}
+	} else {
+		if _, err := os.Stat(ffmpegBin); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrFFmpegUnavailable, err)
+		}
 	}
 
 	decoderName := resolveDecoderName(spec, hw)
 	args := buildDecoderArgs(spec, decoderName, width, height, "gray")
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd := exec.CommandContext(ctx, ffmpegBin, args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("decoder stdin: %w", err)
@@ -539,9 +565,9 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 	binary.LittleEndian.PutUint16(header[4:6], 0)
 	binary.LittleEndian.PutUint16(header[6:8], 32)
 	copy(header[8:12], []byte(fourCC))
-	binary.LittleEndian.PutUint16(header[12:14], uint16(width))
-	binary.LittleEndian.PutUint16(header[14:16], uint16(height))
-	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate))
+	binary.LittleEndian.PutUint16(header[12:14], uint16(width))     //nolint:gosec
+	binary.LittleEndian.PutUint16(header[14:16], uint16(height))    //nolint:gosec
+	binary.LittleEndian.PutUint32(header[16:20], uint32(frameRate)) //nolint:gosec
 	binary.LittleEndian.PutUint32(header[20:24], 1)
 	binary.LittleEndian.PutUint32(header[24:28], 0)
 	binary.LittleEndian.PutUint32(header[28:32], 0)
@@ -550,7 +576,7 @@ func writeIVFHeader(w io.Writer, fourCC string, width, height, frameRate int) er
 
 func writeIVFFrame(w io.Writer, pts uint64, frame []byte) error {
 	header := make([]byte, 12)
-	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame)))
+	binary.LittleEndian.PutUint32(header[0:4], uint32(len(frame))) //nolint:gosec
 	binary.LittleEndian.PutUint64(header[4:12], pts)
 	if err := writeAll(w, header); err != nil {
 		return err
